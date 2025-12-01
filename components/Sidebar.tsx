@@ -1,5 +1,5 @@
 import React from 'react';
-import { LayoutDashboard, FileInput, Table, PieChart, Users, LogOut, TrendingUp } from 'lucide-react';
+import { LayoutDashboard, FileInput, Table, PieChart, Users, LogOut, TrendingUp, Calculator } from 'lucide-react';
 import { User, UserRole } from '../types';
 
 interface SidebarProps {
@@ -12,8 +12,9 @@ interface SidebarProps {
 const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, currentUser, onLogout }) => {
   const menuItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: [UserRole.ADMIN, UserRole.VIEWER, UserRole.ENTRY_OPERATOR] },
-    { id: 'entry', label: 'New Entry', icon: FileInput, roles: [UserRole.ADMIN, UserRole.ENTRY_OPERATOR] },
-    { id: 'data', label: 'Data Sheet', icon: Table, roles: [UserRole.ADMIN, UserRole.VIEWER, UserRole.ENTRY_OPERATOR] },
+    { id: 'analysis', label: 'Profit Analysis', icon: Calculator, roles: [UserRole.ADMIN, UserRole.ENTRY_OPERATOR] },
+    { id: 'entry', label: 'Order Entry (Single)', icon: FileInput, roles: [UserRole.ADMIN, UserRole.ENTRY_OPERATOR] },
+    { id: 'data', label: 'Data Sheet (Orders)', icon: Table, roles: [UserRole.ADMIN, UserRole.VIEWER, UserRole.ENTRY_OPERATOR] },
     { id: 'admanager', label: 'Ad Cost Manager', icon: TrendingUp, roles: [UserRole.ADMIN, UserRole.ENTRY_OPERATOR] },
     { id: 'reports', label: 'Summary Report', icon: PieChart, roles: [UserRole.ADMIN, UserRole.VIEWER] },
     { id: 'admin', label: 'Admin Panel', icon: Users, roles: [UserRole.ADMIN] },
@@ -26,7 +27,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, currentUser,
         <p className="text-xs text-slate-400 mt-1">E-com Management Tool</p>
       </div>
 
-      <nav className="flex-1 p-4 space-y-2">
+      <nav className="flex-1 p-4 space-y-2 overflow-y-auto">
         {menuItems.map((item) => {
           if (!item.roles.includes(currentUser.role)) return null;
           const Icon = item.icon;
@@ -41,7 +42,7 @@ const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, currentUser,
               }`}
             >
               <Icon size={20} />
-              <span className="font-medium">{item.label}</span>
+              <span className="font-medium text-sm">{item.label}</span>
             </button>
           );
         })}

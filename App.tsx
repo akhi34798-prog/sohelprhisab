@@ -6,6 +6,7 @@ import DataSheet from './components/DataSheet';
 import AdCostManager from './components/AdCostManager';
 import SummaryReport from './components/SummaryReport';
 import AdminPanel from './components/AdminPanel';
+import ProfitAnalysis from './components/ProfitAnalysis';
 import { User, UserRole } from './types';
 import { getUsers } from './services/storage';
 
@@ -88,6 +89,7 @@ const App: React.FC = () => {
       
       <main className="ml-64 flex-1">
         {activeTab === 'dashboard' && <Dashboard />}
+        {activeTab === 'analysis' && <ProfitAnalysis />}
         {activeTab === 'entry' && <EntryForm />}
         {activeTab === 'data' && <DataSheet />}
         {activeTab === 'admanager' && <AdCostManager />}

@@ -1,10 +1,10 @@
-import { Order, User, UserRole, CostTemplate, OrderStatus } from '../types';
+import { Order, User, UserRole, CostTemplate, OrderStatus, DailyAnalysisData } from '../types';
 
 const KEYS = {
   ORDERS: 'ecpm_orders',
   USERS: 'ecpm_users',
   TEMPLATES: 'ecpm_templates',
-  CURRENT_USER: 'ecpm_current_user',
+  ANALYSIS: 'ecpm_analysis',
 };
 
 // --- Orders ---
@@ -30,6 +30,25 @@ export const updateOrder = (updatedOrder: Order) => {
 export const deleteOrder = (id: string) => {
   const orders = getOrders().filter(o => o.id !== id);
   saveOrders(orders);
+};
+
+// --- Profit Analysis Sheet ---
+export const getAnalysisData = (): DailyAnalysisData[] => {
+  const data = localStorage.getItem(KEYS.ANALYSIS);
+  return data ? JSON.parse(data) : [];
+};
+
+export const saveAnalysisData = (data: DailyAnalysisData) => {
+  const allData = getAnalysisData();
+  // Remove existing entry for this date if exists (overwrite)
+  const filtered = allData.filter(d => d.date !== data.date);
+  filtered.push(data);
+  localStorage.setItem(KEYS.ANALYSIS, JSON.stringify(filtered));
+};
+
+export const getAnalysisByDate = (date: string): DailyAnalysisData | null => {
+  const all = getAnalysisData();
+  return all.find(d => d.date === date) || null;
 };
 
 // --- Templates ---
@@ -87,7 +106,6 @@ export const deleteUser = (id: string) => {
 export const calculateNetProfit = (order: Order): number => {
   if (order.status === OrderStatus.RETURNED) {
     // Return Loss = Packaging + Delivery + Ad Cost share + (Management Share if applicable)
-    // Usually return means we lost the shipping and packaging and the ad money spent to get that lead.
     return -(order.packagingCost + order.deliveryCost + order.adCost);
   }
   if (order.status === OrderStatus.CANCELLED) return 0;

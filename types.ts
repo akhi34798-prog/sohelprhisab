@@ -60,3 +60,55 @@ export interface GlobalDailyCost {
   salaries: number;
   miscCost: number;
 }
+
+// --- New Interfaces for Profit Analysis Sheet ---
+
+export interface AnalysisRow {
+  id: string;
+  pageName: string;
+  productName: string;
+  
+  // Manual Inputs
+  totalOrders: number;
+  returnPercent: number; // e.g., 20 for 20%
+  courierCancelPercent: number;
+  
+  salePrice: number;
+  purchaseCost: number; // Maler dam
+  
+  pageTotalAdDollar: number; // Total $ spend for this page
+  pageTotalSalary: number; // Total salary specific to this page
+  
+  deliveryCharge: number;
+  packagingCost: number;
+  
+  haziraBonus: number; // Manual adjustment
+  codChargePercent: number; // Usually 1%
+
+  // Cached Calculations (saved for Dashboard)
+  calculatedNetProfit?: number;
+  calculatedReturnLoss?: number;
+  calculatedTotalSales?: number;
+}
+
+export interface DailyAnalysisData {
+  id: string;
+  date: string;
+  
+  // Global Daily Inputs
+  dollarRate: number;
+  totalMgmtSalary: number; // Office total salary
+  totalOfficeCost: number; // Rent + Misc
+  totalDailyBonus: number; // Office wide bonus
+  
+  rows: AnalysisRow[];
+
+  // Daily Summary (Cached)
+  summary?: {
+    totalProfit: number;
+    totalOrders: number;
+    totalReturnLoss: number;
+    totalDelivered: number;
+    totalSales: number;
+  };
+}
