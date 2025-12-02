@@ -1,3 +1,4 @@
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { getAnalysisByDate, saveAnalysisData, getPageNames, recalculateDailyFinancials } from '../services/storage';
 import { DailyAnalysisData, AnalysisRow } from '../types';
@@ -9,7 +10,7 @@ const AdCostManager: React.FC = () => {
   const [dayData, setDayData] = useState<DailyAnalysisData | null>(null);
   
   // Global State (Strings for better input handling)
-  const [globalRate, setGlobalRate] = useState<string>('120');
+  const [globalRate, setGlobalRate] = useState<string>('126'); // Default 126
   const [globalMgmt, setGlobalMgmt] = useState<string>('');
   const [globalOffice, setGlobalOffice] = useState<string>('');
   const [globalBonus, setGlobalBonus] = useState<string>('');
@@ -34,12 +35,12 @@ const AdCostManager: React.FC = () => {
     setDayData(data);
     
     if (data) {
-        setGlobalRate(String(data.dollarRate || 120));
+        setGlobalRate(String(data.dollarRate || 126));
         setGlobalMgmt(data.totalMgmtSalary ? String(data.totalMgmtSalary) : '');
         setGlobalOffice(data.totalOfficeCost ? String(data.totalOfficeCost) : '');
         setGlobalBonus(data.totalDailyBonus ? String(data.totalDailyBonus) : '');
     } else {
-        setGlobalRate('120');
+        setGlobalRate('126');
         setGlobalMgmt('');
         setGlobalOffice('');
         setGlobalBonus('');
@@ -71,7 +72,7 @@ const AdCostManager: React.FC = () => {
   };
 
   const handleUpdateGlobals = () => {
-      const newRate = parseFloat(globalRate) || 120;
+      const newRate = parseFloat(globalRate) || 126;
       const newMgmt = parseFloat(globalMgmt) || 0;
       const newOffice = parseFloat(globalOffice) || 0;
       const newBonus = parseFloat(globalBonus) || 0;
@@ -80,7 +81,7 @@ const AdCostManager: React.FC = () => {
       let newData: DailyAnalysisData = dayData ? { ...dayData } : {
           id: uuidv4(),
           date: date,
-          dollarRate: 120,
+          dollarRate: 126,
           totalMgmtSalary: 0,
           totalOfficeCost: 0,
           totalDailyBonus: 0,
@@ -146,7 +147,7 @@ const AdCostManager: React.FC = () => {
     let currentDayData: DailyAnalysisData = dayData ? { ...dayData } : {
         id: uuidv4(),
         date: date,
-        dollarRate: parseFloat(globalRate) || 120,
+        dollarRate: parseFloat(globalRate) || 126,
         totalMgmtSalary: 0,
         totalOfficeCost: 0,
         totalDailyBonus: 0,
@@ -362,7 +363,7 @@ const AdCostManager: React.FC = () => {
                     </div>
                     <div>
                         <label className="text-[10px] uppercase font-bold text-gray-400">Global Rate</label>
-                        <input type="text" inputMode="decimal" value={globalRate} onChange={e => validateNumberInput(e.target.value) && setGlobalRate(e.target.value)} className="w-full border rounded p-2 text-xs" placeholder="120"/>
+                        <input type="text" inputMode="decimal" value={globalRate} onChange={e => validateNumberInput(e.target.value) && setGlobalRate(e.target.value)} className="w-full border rounded p-2 text-xs" placeholder="126"/>
                     </div>
                  </div>
                  <button onClick={handleUpdateGlobals} className="w-full bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-bold py-2 rounded">

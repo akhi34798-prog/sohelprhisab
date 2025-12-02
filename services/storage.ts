@@ -1,4 +1,5 @@
-import { Order, User, UserRole, CostTemplate, OrderStatus, DailyAnalysisData, AnalysisRow } from '../types';
+
+import { Order, User, UserRole, CostTemplate, OrderStatus, DailyAnalysisData, AnalysisRow, SavedProduct } from '../types';
 import { v4 as uuidv4 } from 'uuid';
 
 const KEYS = {
@@ -7,10 +8,10 @@ const KEYS = {
   TEMPLATES: 'ecpm_templates',
   ANALYSIS: 'ecpm_analysis',
   PAGE_NAMES: 'ecpm_page_names',
-  PRODUCT_NAMES: 'ecpm_product_names',
+  SAVED_PRODUCTS: 'ecpm_saved_products_v2', // Changed key to differentiate from old string list
 };
 
-// --- Page & Product Names Management ---
+// --- Page Names Management ---
 export const getPageNames = (): string[] => {
   const data = localStorage.getItem(KEYS.PAGE_NAMES);
   return data ? JSON.parse(data) : ['Page A', 'Page B', 'Health Zone'];
@@ -29,22 +30,36 @@ export const deletePageName = (name: string) => {
   localStorage.setItem(KEYS.PAGE_NAMES, JSON.stringify(list));
 };
 
-export const getProductNames = (): string[] => {
-  const data = localStorage.getItem(KEYS.PRODUCT_NAMES);
-  return data ? JSON.parse(data) : ['Product 1', 'Combo A'];
+// --- Product Management (With Prices) ---
+export const getSavedProducts = (): SavedProduct[] => {
+  const data = localStorage.getItem(KEYS.SAVED_PRODUCTS);
+  if (data) return JSON.parse(data);
+  
+  // Migration or fallback for first run
+  return [
+    { id: '1', name: 'Product 1', defaultBuyPrice: 50, defaultSalePrice: 1200 },
+    { id: '2', name: 'Combo A', defaultBuyPrice: 120, defaultSalePrice: 1500 }
+  ];
 };
 
-export const saveProductName = (name: string) => {
-  const list = getProductNames();
-  if (!list.includes(name) && name.trim() !== '') {
-    list.push(name.trim());
-    localStorage.setItem(KEYS.PRODUCT_NAMES, JSON.stringify(list));
+export const saveSavedProduct = (product: SavedProduct) => {
+  const list = getSavedProducts();
+  // Check if exists by name to update, or add new
+  const index = list.findIndex(p => p.name.toLowerCase() === product.name.toLowerCase());
+  
+  if (index >= 0) {
+      // Update existing
+      list[index] = { ...list[index], ...product };
+  } else {
+      // Add new
+      list.push(product);
   }
+  localStorage.setItem(KEYS.SAVED_PRODUCTS, JSON.stringify(list));
 };
 
-export const deleteProductName = (name: string) => {
-  const list = getProductNames().filter(n => n !== name);
-  localStorage.setItem(KEYS.PRODUCT_NAMES, JSON.stringify(list));
+export const deleteSavedProduct = (id: string) => {
+  const list = getSavedProducts().filter(p => p.id !== id);
+  localStorage.setItem(KEYS.SAVED_PRODUCTS, JSON.stringify(list));
 };
 
 // --- Orders (Legacy / Simple List) ---
@@ -220,7 +235,7 @@ export const appendAnalysisRows = (date: string, newRows: AnalysisRow[], globalU
       dayData = {
           id: uuidv4(),
           date: date,
-          dollarRate: Number(globalUpdates.dollarRate) || 120,
+          dollarRate: Number(globalUpdates.dollarRate) || 126, // Default to 126 if not provided
           totalMgmtSalary: Number(globalUpdates.totalMgmtSalary) || 0,
           totalOfficeCost: Number(globalUpdates.totalOfficeCost) || 0,
           totalDailyBonus: Number(globalUpdates.totalDailyBonus) || 0,

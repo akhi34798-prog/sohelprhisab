@@ -1,3 +1,4 @@
+
 export enum UserRole {
   ADMIN = 'ADMIN',
   ENTRY_OPERATOR = 'ENTRY_OPERATOR',
@@ -10,6 +11,13 @@ export interface User {
   password: string; // In a real app, hash this.
   role: UserRole;
   permissions: string[];
+}
+
+export interface SavedProduct {
+  id: string;
+  name: string;
+  defaultSalePrice: number;
+  defaultBuyPrice: number;
 }
 
 export enum OrderStatus {

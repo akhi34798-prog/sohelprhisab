@@ -40,8 +40,39 @@ const ProfitAnalysis: React.FC = () => {
     }
   };
 
-  const updateRow = (id: string, field: keyof AnalysisRow, value: any) => {
-    setRows(rows.map(r => r.id === id ? { ...r, [field]: Number(value) || (field === 'pageName' || field === 'productName' ? value : 0) } : r));
+  const updateRow = (id: string, field: keyof AnalysisRow, value: string) => {
+    // Helper to allow typing decimals (e.g. "50.") without forcing Number() immediately
+    // We store the value as string/number in the state temporarily if needed, 
+    // but here we just ensure the field matches the type. 
+    // Ideally we update the state with the raw value, but since rows are strongly typed,
+    // we will cast safely.
+    
+    // For numeric fields, allow empty string or valid decimal format
+    if (value === '' || /^\d*\.?\d*$/.test(value)) {
+        setRows(rows.map(r => {
+            if (r.id === id) {
+                // If empty string, set 0 or keep empty logic if type supports it. 
+                // Here we set 0 for calculations but might need to handle UI text separately.
+                // A simple approach is using Number() but handling the UI via a separate local state or just accepting strict parsing.
+                // To fix the "dot" issue, we usually need the input to be uncontrolled or handle string state.
+                // Since this is a deep update, we will simply parse float for now but let's try to preserve text behavior if possible.
+                // Actually, the best way here without complex local state is to just parse. 
+                // If user types "50.", parseFloat is 50. We lose the dot.
+                // To fix this properly, we need input components. 
+                // BUT for now, let's use a robust approach: 
+                
+                const numValue = value === '' ? 0 : value; // Keep string if possible? No, type is number.
+                // Workaround: We will update the value. The UI input should use type="text" or handle it.
+                return { ...r, [field]: value }; // We might need to cast to any to bypass TS for the intermediate state or update types.
+            }
+            return r;
+        }) as any); // cast as any to allow string injection for typing
+    }
+  };
+  
+  // Safe blur handler to ensure numbers are saved
+  const onBlurRow = (id: string, field: keyof AnalysisRow, value: string) => {
+      setRows(rows.map(r => r.id === id ? { ...r, [field]: Number(value) || 0 } : r));
   };
 
   // --- PREPARE DATA FOR DISPLAY (PER UNIT LOGIC) ---
@@ -50,18 +81,19 @@ const ProfitAnalysis: React.FC = () => {
     const pageAggregates = new Map<string, number>();
     rows.forEach(r => {
       const current = pageAggregates.get(r.pageName) || 0;
-      pageAggregates.set(r.pageName, current + r.pageTotalAdDollar);
+      // Ensure we treat these as numbers
+      pageAggregates.set(r.pageName, current + Number(r.pageTotalAdDollar));
     });
 
     return rows.map(r => {
       const tOrders = Number(r.totalOrders) || 1; // Avoid divide by zero for unit calcs
-      const returnCount = Math.round((tOrders * r.returnPercent) / 100);
+      const returnCount = Math.round((tOrders * Number(r.returnPercent)) / 100);
       const deliveredCount = tOrders - returnCount;
-      const effectiveRate = r.dollarRate || dollarRate;
+      const effectiveRate = Number(r.dollarRate) || dollarRate;
 
       // --- UNIT COSTS (For Display) ---
-      const unitAdTk = (r.pageTotalAdDollar * effectiveRate) / tOrders;
-      const unitSalary = r.pageTotalSalary / tOrders;
+      const unitAdTk = (Number(r.pageTotalAdDollar) * effectiveRate) / tOrders;
+      const unitSalary = Number(r.pageTotalSalary) / tOrders;
       
       // Global Unit Costs (Recalculated in storage, but we derive for display check)
       const dayTotalOrders = rows.reduce((s, row) => s + Number(row.totalOrders), 0) || 1;
@@ -69,17 +101,17 @@ const ProfitAnalysis: React.FC = () => {
       const unitOffice = totalOfficeCost / dayTotalOrders;
       const unitBonus = totalDailyBonus / dayTotalOrders;
 
-      const unitDelivery = r.deliveryCharge;
-      const unitPacking = r.packagingCost;
-      const unitCod = (r.salePrice * r.codChargePercent) / 100;
+      const unitDelivery = Number(r.deliveryCharge);
+      const unitPacking = Number(r.packagingCost);
+      const unitCod = (Number(r.salePrice) * Number(r.codChargePercent)) / 100;
       const unitReturnLoss = r.calculatedReturnLoss ? (r.calculatedReturnLoss / (deliveredCount || 1)) : 0; 
 
       // Total Cost Per Unit (Delivered Basis)
-      const unitTotalCost = r.purchaseCost + unitAdTk + unitSalary + unitMgmt + unitBonus + unitOffice + unitCod + unitReturnLoss + unitDelivery + unitPacking;
+      const unitTotalCost = Number(r.purchaseCost) + unitAdTk + unitSalary + unitMgmt + unitBonus + unitOffice + unitCod + unitReturnLoss + unitDelivery + unitPacking;
 
       // Net Profit Check
       const calculatedNet = r.calculatedNetProfit || 0;
-      const perPichProfit = r.salePrice - unitTotalCost;
+      const perPichProfit = Number(r.salePrice) - unitTotalCost;
 
       return {
         ...r,
@@ -119,6 +151,15 @@ const ProfitAnalysis: React.FC = () => {
   }, [displayRows]);
 
   const handleSave = () => {
+    // Ensure all numbers are clean before saving
+    const cleanRows = rows.map(r => ({
+        ...r,
+        purchaseCost: Number(r.purchaseCost),
+        salePrice: Number(r.salePrice),
+        totalOrders: Number(r.totalOrders),
+        returnPercent: Number(r.returnPercent)
+    }));
+
     const rawData: DailyAnalysisData = {
       id: uuidv4(),
       date,
@@ -126,7 +167,7 @@ const ProfitAnalysis: React.FC = () => {
       totalMgmtSalary,
       totalOfficeCost,
       totalDailyBonus,
-      rows: rows,
+      rows: cleanRows,
       summary: undefined
     };
 
@@ -161,7 +202,7 @@ const ProfitAnalysis: React.FC = () => {
                 <th className="p-2 text-left sticky left-20 bg-slate-50 border-r">PAGE NAME</th>
                 <th className="p-2 text-left sticky left-48 bg-slate-50 border-r">PRODUCT NAME</th>
                 
-                <th className="p-2 bg-blue-50 text-blue-900">MALLER DAM</th>
+                <th className="p-2 bg-blue-50 text-blue-900 w-24">MALLER DAM</th>
                 <th className="p-2 bg-yellow-50 text-yellow-900">DOLLAR ($)</th>
                 <th className="p-2">RATE</th>
                 <th className="p-2">DOLLER</th>
@@ -175,12 +216,12 @@ const ProfitAnalysis: React.FC = () => {
                 <th className="p-2">PACKING COST</th>
                 
                 <th className="p-2 font-bold bg-gray-100 border-x">TOTAL COST</th>
-                <th className="p-2 font-bold text-blue-700 bg-blue-50">SALE</th>
+                <th className="p-2 font-bold text-blue-700 bg-blue-50 w-24">SALE</th>
                 <th className="p-2 text-green-700">PER PICH PROFIT</th>
                 <th className="p-2 text-red-500">TOTAL RETURN TK.</th>
                 
-                <th className="p-2 bg-slate-800 text-white">TOTAL ORDER</th>
-                <th className="p-2 bg-red-50 text-red-800">PARCENT</th>
+                <th className="p-2 bg-slate-800 text-white w-20">TOTAL ORDER</th>
+                <th className="p-2 bg-red-50 text-red-800 w-16">PARCENT</th>
                 <th className="p-2 bg-green-50 text-green-800 border-l border-green-200">NET PROFIT</th>
                 <th className="p-2 no-print">Action</th>
               </tr>
@@ -192,7 +233,18 @@ const ProfitAnalysis: React.FC = () => {
                   <td className="p-2 text-left sticky left-20 bg-white border-r font-bold">{row.pageName}</td>
                   <td className="p-2 text-left sticky left-48 bg-white border-r text-gray-600">{row.productName}</td>
 
-                  <td className="p-2 bg-blue-50 text-gray-900">{row.purchaseCost.toFixed(2)}</td>
+                  {/* EDITABLE MALLER DAM */}
+                  <td className="p-2 bg-blue-50">
+                    <input 
+                      type="text" 
+                      inputMode="decimal"
+                      value={row.purchaseCost}
+                      onChange={e => updateRow(row.id, 'purchaseCost', e.target.value)}
+                      onBlur={e => onBlurRow(row.id, 'purchaseCost', e.target.value)}
+                      className="w-full bg-transparent text-right outline-none focus:border-b border-blue-500"
+                    />
+                  </td>
+
                   <td className="p-2 bg-yellow-50 text-yellow-800 font-bold">${Math.round(row.pageTotalAdDollarDisplay)}</td>
                   <td className="p-2 text-gray-500 font-mono">{row.effectiveRate}</td>
                   <td className="p-2">{row.unitAdTk.toFixed(2)}</td>
@@ -206,15 +258,49 @@ const ProfitAnalysis: React.FC = () => {
                   <td className="p-2">{row.unitPacking.toFixed(2)}</td>
                   
                   <td className="p-2 font-bold bg-gray-100 border-x">{row.unitTotalCost.toFixed(2)}</td>
-                  <td className="p-2 font-bold text-blue-700 bg-blue-50">{row.salePrice.toFixed(2)}</td>
+                  
+                  {/* EDITABLE SALE */}
+                  <td className="p-2 font-bold text-blue-700 bg-blue-50">
+                    <input 
+                      type="text" 
+                      inputMode="decimal"
+                      value={row.salePrice}
+                      onChange={e => updateRow(row.id, 'salePrice', e.target.value)}
+                      onBlur={e => onBlurRow(row.id, 'salePrice', e.target.value)}
+                      className="w-full bg-transparent text-right outline-none focus:border-b border-blue-500 text-blue-700 font-bold"
+                    />
+                  </td>
                   
                   <td className={`p-2 font-bold ${row.perPichProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                     {row.perPichProfit.toFixed(2)}
                   </td>
                   
                   <td className="p-2 text-red-500 font-bold">{row.calculatedReturnLoss?.toFixed(2)}</td>
-                  <td className="p-2 bg-slate-800 text-white font-bold text-center">{row.totalOrders}</td>
-                  <td className="p-2 bg-red-50 text-red-800 text-center">{row.returnPercent}%</td>
+                  
+                  {/* EDITABLE TOTAL ORDER */}
+                  <td className="p-2 bg-slate-800 text-white font-bold text-center">
+                    <input 
+                      type="text" 
+                      inputMode="decimal"
+                      value={row.totalOrders}
+                      onChange={e => updateRow(row.id, 'totalOrders', e.target.value)}
+                      onBlur={e => onBlurRow(row.id, 'totalOrders', e.target.value)}
+                      className="w-full bg-transparent text-center outline-none focus:border-b border-white text-white font-bold"
+                    />
+                  </td>
+
+                  {/* EDITABLE PERCENT */}
+                  <td className="p-2 bg-red-50 text-red-800 text-center">
+                     <input 
+                      type="text" 
+                      inputMode="decimal"
+                      value={row.returnPercent}
+                      onChange={e => updateRow(row.id, 'returnPercent', e.target.value)}
+                      onBlur={e => onBlurRow(row.id, 'returnPercent', e.target.value)}
+                      className="w-full bg-transparent text-center outline-none focus:border-b border-red-500 text-red-800"
+                    />
+                  </td>
+
                   <td className={`p-2 font-bold border-l border-green-100 ${row.calculatedNet >= 0 ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
                     {Math.round(row.calculatedNet).toLocaleString()}
                   </td>

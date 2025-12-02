@@ -1,50 +1,100 @@
+
 import React, { useState, useEffect, useMemo } from 'react';
 import { v4 as uuidv4 } from 'uuid';
-import { AnalysisRow } from '../types';
-import { appendAnalysisRows, getPageNames, savePageName, deletePageName, getProductNames, saveProductName, deleteProductName, getAnalysisByDate } from '../services/storage';
+import { AnalysisRow, SavedProduct } from '../types';
+import { appendAnalysisRows, getPageNames, savePageName, deletePageName, getSavedProducts, saveSavedProduct, deleteSavedProduct, getAnalysisByDate } from '../services/storage';
 import { Plus, Trash2, Save, Settings, Info, Calendar, RefreshCw } from 'lucide-react';
 
-// Sub-component for Managing Lists
-const ManageModal: React.FC<{
-  title: string;
+// Sub-component for Managing Pages
+const ManagePageModal: React.FC<{
   isOpen: boolean;
   onClose: () => void;
   items: string[];
   onAdd: (name: string) => void;
   onDelete: (name: string) => void;
-}> = ({ title, isOpen, onClose, items, onAdd, onDelete }) => {
+}> = ({ isOpen, onClose, items, onAdd, onDelete }) => {
   const [newItem, setNewItem] = useState('');
-
   if (!isOpen) return null;
-
   return (
     <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
       <div className="bg-white rounded-lg shadow-xl w-96 p-6">
         <div className="flex justify-between items-center mb-4">
-          <h3 className="text-lg font-bold text-gray-800">{title}</h3>
+          <h3 className="text-lg font-bold text-gray-800">Manage Pages</h3>
           <button onClick={onClose} className="text-gray-500 hover:text-gray-700"><Plus className="rotate-45" size={24}/></button>
         </div>
         <div className="flex gap-2 mb-4">
-          <input 
-            value={newItem} 
-            onChange={e => setNewItem(e.target.value)}
-            className="flex-1 border rounded px-3 py-2"
-            placeholder="Add new..."
-          />
-          <button 
-            onClick={() => { onAdd(newItem); setNewItem(''); }}
-            className="bg-blue-600 text-white px-4 rounded hover:bg-blue-700"
-          >
-            <Save size={18} />
-          </button>
+          <input value={newItem} onChange={e => setNewItem(e.target.value)} className="flex-1 border rounded px-3 py-2" placeholder="New Page Name..." />
+          <button onClick={() => { onAdd(newItem); setNewItem(''); }} className="bg-blue-600 text-white px-4 rounded hover:bg-blue-700"><Save size={18} /></button>
         </div>
         <div className="max-h-60 overflow-y-auto space-y-2">
           {items.map(item => (
             <div key={item} className="flex justify-between items-center p-2 bg-gray-50 rounded">
               <span>{item}</span>
-              <button onClick={() => onDelete(item)} className="text-red-400 hover:text-red-600">
-                <Trash2 size={16} />
-              </button>
+              <button onClick={() => onDelete(item)} className="text-red-400 hover:text-red-600"><Trash2 size={16} /></button>
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// Sub-component for Managing Products (With Prices)
+const ManageProductModal: React.FC<{
+  isOpen: boolean;
+  onClose: () => void;
+  products: SavedProduct[];
+  onAdd: (product: SavedProduct) => void;
+  onDelete: (id: string) => void;
+}> = ({ isOpen, onClose, products, onAdd, onDelete }) => {
+  const [name, setName] = useState('');
+  const [buy, setBuy] = useState('');
+  const [sale, setSale] = useState('');
+
+  const handleSave = () => {
+      if (!name) return;
+      onAdd({
+          id: uuidv4(),
+          name,
+          defaultBuyPrice: parseFloat(buy) || 0,
+          defaultSalePrice: parseFloat(sale) || 0
+      });
+      setName('');
+      setBuy('');
+      setSale('');
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+      <div className="bg-white rounded-lg shadow-xl w-[500px] p-6">
+        <div className="flex justify-between items-center mb-4">
+          <h3 className="text-lg font-bold text-gray-800">Manage Products & Fixed Prices</h3>
+          <button onClick={onClose} className="text-gray-500 hover:text-gray-700"><Plus className="rotate-45" size={24}/></button>
+        </div>
+        
+        <div className="bg-gray-50 p-4 rounded mb-4 grid grid-cols-4 gap-2">
+             <div className="col-span-4"><label className="text-xs font-bold text-gray-500">Product Name</label></div>
+             <input value={name} onChange={e => setName(e.target.value)} className="col-span-4 border rounded p-2 text-sm" placeholder="e.g. Combo A" />
+             
+             <div className="col-span-2"><label className="text-xs font-bold text-gray-500">Default Sale Price</label></div>
+             <div className="col-span-2"><label className="text-xs font-bold text-gray-500">Default Buy Price</label></div>
+             
+             <input type="number" value={sale} onChange={e => setSale(e.target.value)} className="col-span-2 border rounded p-2 text-sm" placeholder="0" />
+             <input type="number" value={buy} onChange={e => setBuy(e.target.value)} className="col-span-2 border rounded p-2 text-sm" placeholder="0" />
+             
+             <button onClick={handleSave} className="col-span-4 mt-2 bg-blue-600 text-white py-2 rounded font-bold hover:bg-blue-700">Save Product</button>
+        </div>
+
+        <div className="max-h-60 overflow-y-auto space-y-2 border-t pt-2">
+          {products.map(p => (
+            <div key={p.id} className="flex justify-between items-center p-3 bg-white border rounded shadow-sm">
+              <div>
+                  <div className="font-bold text-gray-800">{p.name}</div>
+                  <div className="text-xs text-gray-500">Sale: {p.defaultSalePrice} | Buy: {p.defaultBuyPrice}</div>
+              </div>
+              <button onClick={() => onDelete(p.id)} className="text-red-400 hover:text-red-600"><Trash2 size={16} /></button>
             </div>
           ))}
         </div>
@@ -61,22 +111,22 @@ const EntryForm: React.FC = () => {
   // Modals
   const [showPageModal, setShowPageModal] = useState(false);
   const [showProductModal, setShowProductModal] = useState(false);
+  
   const [availablePages, setAvailablePages] = useState<string[]>([]);
-  const [availableProducts, setAvailableProducts] = useState<string[]>([]);
+  const [savedProducts, setSavedProducts] = useState<SavedProduct[]>([]);
 
-  // Products List
-  const [products, setProducts] = useState<{id: string, name: string, qty: number, sale: number, buy: number}[]>([
-    { id: uuidv4(), name: '', qty: 0, sale: 0, buy: 0 }
+  // Products List - Using string for numbers to support typing decimals
+  const [products, setProducts] = useState<{id: string, name: string, qty: string, sale: string, buy: string}[]>([
+    { id: uuidv4(), name: '', qty: '0', sale: '0', buy: '0' }
   ]);
 
   // Shared Costs (Representing TOTAL for the Day/Page)
   const [dollarAmount, setDollarAmount] = useState(0);
-  const [rate, setRate] = useState(120);
+  const [rate, setRate] = useState(126); // Default 126
   const [pageSalary, setPageSalary] = useState(0);
   const [returnPercent, setReturnPercent] = useState(20);
 
   // Helper state to track what was loaded from storage
-  // This helps us calculate the "Delta" (New - Existing) when saving
   const [loadedAdTotal, setLoadedAdTotal] = useState(0);
   const [loadedSalTotal, setLoadedSalTotal] = useState(0);
 
@@ -87,8 +137,8 @@ const EntryForm: React.FC = () => {
   const [globalLoaded, setGlobalLoaded] = useState(false);
 
   // Unit Logistics
-  const [deliveryCharge, setDeliveryCharge] = useState(120);
-  const [packingCost, setPackingCost] = useState(15);
+  const [deliveryCharge, setDeliveryCharge] = useState(90); // Default 90
+  const [packingCost, setPackingCost] = useState(6); // Default 6
   const [codPercent, setCodPercent] = useState(1);
 
   // Sidebar Data
@@ -97,7 +147,7 @@ const EntryForm: React.FC = () => {
   // --- Effects ---
   useEffect(() => {
     setAvailablePages(getPageNames());
-    setAvailableProducts(getProductNames());
+    setSavedProducts(getSavedProducts());
   }, [showPageModal, showProductModal]);
 
   useEffect(() => {
@@ -112,7 +162,6 @@ const EntryForm: React.FC = () => {
     } else {
       setRecentEntries([]);
       setGlobalLoaded(false);
-      // Keep previous globals or reset? Resetting is safer for new day
       setGlobalMgmt(0);
       setGlobalOffice(0);
       setGlobalBonus(0);
@@ -124,32 +173,24 @@ const EntryForm: React.FC = () => {
       if (pageRows.length > 0) {
         const totalAd = pageRows.reduce((sum, r) => sum + r.pageTotalAdDollar, 0);
         const totalSal = pageRows.reduce((sum, r) => sum + r.pageTotalSalary, 0);
-        
-        // Use specific rate if set, else fallback to global for day, else 120
-        // Ensure we don't accidentally set 0 if rate is missing
-        const pageRate = pageRows[0].dollarRate || dayData.dollarRate || 120;
+        const pageRate = pageRows[0].dollarRate || dayData.dollarRate || 126;
 
-        // Set inputs to match existing TOTAL
         setDollarAmount(totalAd);
         setPageSalary(totalSal);
         setRate(pageRate);
-        
-        // Track what we loaded
         setLoadedAdTotal(totalAd);
         setLoadedSalTotal(totalSal);
       } else {
-        // Page selected but no data yet -> Reset inputs
         setDollarAmount(0);
         setPageSalary(0);
-        setRate(dayData.dollarRate || 120); // Reset rate to daily default
+        setRate(dayData.dollarRate || 126); 
         setLoadedAdTotal(0);
         setLoadedSalTotal(0);
       }
     } else {
-      // No page selected or no data for day -> Reset inputs
       setDollarAmount(0);
       setPageSalary(0);
-      setRate(dayData ? (dayData.dollarRate || 120) : 120);
+      setRate(dayData ? (dayData.dollarRate || 126) : 126);
       setLoadedAdTotal(0);
       setLoadedSalTotal(0);
     }
@@ -157,16 +198,36 @@ const EntryForm: React.FC = () => {
   }, [date, pageName]); 
 
   // --- Calculations ---
-  const totalBatchOrders = useMemo(() => products.reduce((sum, p) => sum + p.qty, 0), [products]);
+  const totalBatchOrders = useMemo(() => products.reduce((sum, p) => sum + Number(p.qty), 0), [products]);
   const totalPageAdCost = dollarAmount * rate;
 
   // --- Handlers ---
   const handleAddProduct = () => {
-    setProducts([...products, { id: uuidv4(), name: '', qty: 0, sale: 0, buy: 0 }]);
+    setProducts([...products, { id: uuidv4(), name: '', qty: '0', sale: '0', buy: '0' }]);
   };
 
-  const updateProduct = (id: string, field: string, val: any) => {
-    setProducts(products.map(p => p.id === id ? { ...p, [field]: val } : p));
+  const updateProduct = (id: string, field: string, val: string) => {
+    // Logic for Product Name Selection & Auto-Fill
+    if (field === 'name') {
+        // Find if this name matches a saved product
+        const saved = savedProducts.find(p => p.name.toLowerCase() === val.toLowerCase());
+        
+        setProducts(products.map(p => {
+            if (p.id === id) {
+                // If found, auto-fill prices, but allow override
+                if (saved) {
+                    return { ...p, name: val, sale: String(saved.defaultSalePrice), buy: String(saved.defaultBuyPrice) };
+                }
+                return { ...p, name: val };
+            }
+            return p;
+        }));
+    } else {
+        // Standard numeric field update
+        if (val === '' || /^\d*\.?\d*$/.test(val)) {
+            setProducts(products.map(p => p.id === id ? { ...p, [field]: val } : p));
+        }
+    }
   };
 
   const removeProduct = (id: string) => {
@@ -177,7 +238,6 @@ const EntryForm: React.FC = () => {
     if (!pageName) return alert("Please select a Page Name");
     if (totalBatchOrders === 0) return alert("Please enter at least one product with quantity");
 
-    // Fetch fresh data to ensure we calculate delta against latest state (in case of concurrent edits)
     const currentDayData = getAnalysisByDate(date);
     let existingAdTotal = 0;
     let existingSalTotal = 0;
@@ -188,13 +248,9 @@ const EntryForm: React.FC = () => {
        existingSalTotal = pageRows.reduce((sum, r) => sum + r.pageTotalSalary, 0);
     }
 
-    // CALCULATE DELTA: The amount to add to the system for this new batch
-    // If user kept input at 100 and existing is 100, delta is 0. 
-    // The system will then redistribute the 100 across (Old Orders + New Batch Orders).
     const deltaAdDollar = dollarAmount - existingAdTotal;
     const deltaPageSalary = pageSalary - existingSalTotal;
 
-    // Estimate total orders for global cost averaging
     const existingTotalOrders = currentDayData ? currentDayData.rows.reduce((sum, r) => sum + r.totalOrders, 0) : 0;
     const estimatedDailyOrders = existingTotalOrders + totalBatchOrders;
 
@@ -202,45 +258,39 @@ const EntryForm: React.FC = () => {
     const avgOffice = estimatedDailyOrders > 0 ? globalOffice / estimatedDailyOrders : 0;
     const avgBonus = estimatedDailyOrders > 0 ? globalBonus / estimatedDailyOrders : 0;
 
-    // Create New Rows
     const newRows: AnalysisRow[] = products.map(p => {
-      // Weight of this product within the CURRENT BATCH
-      const weight = p.qty / totalBatchOrders;
-      
-      // Assign the DELTA cost to this batch. 
-      // The `recalculateDailyFinancials` engine will later sum this up with old batches 
-      // and redistribute the GRAND TOTAL across ALL orders properly.
+      const qty = Number(p.qty) || 0;
+      const sale = Number(p.sale) || 0;
+      const buy = Number(p.buy) || 0;
+
+      const weight = qty / totalBatchOrders;
       const assignedAdDollar = deltaAdDollar * weight;
       const assignedSalary = deltaPageSalary * weight;
 
-      // -- PRE-CALCULATION (Temporary, mainly for immediate display logic before recalc logic runs) --
-      // Note: Actual final values will be set by appendAnalysisRows -> recalculateDailyFinancials
-      const returnCount = Math.round((p.qty * returnPercent) / 100);
-      const deliveredCount = p.qty - returnCount;
+      const returnCount = Math.round((qty * returnPercent) / 100);
+      const deliveredCount = qty - returnCount;
       
-      // Temporary Unit Costs (Just for object creation)
-      const unitAd = (assignedAdDollar * rate) / p.qty; // This is just delta unit cost, doesn't matter, recalc fixes it
-      const unitSal = assignedSalary / p.qty;
+      const unitAd = qty > 0 ? (assignedAdDollar * rate) / qty : 0;
+      const unitSal = qty > 0 ? assignedSalary / qty : 0;
       const unitOpsCost = unitAd + unitSal + avgMgmt + avgOffice + avgBonus + deliveryCharge + packingCost;
       
-      const totalOpsCost = unitOpsCost * p.qty;
-      const unitCod = (p.sale * codPercent) / 100;
+      const totalOpsCost = unitOpsCost * qty;
+      const unitCod = (sale * codPercent) / 100;
       const totalCod = unitCod * deliveredCount;
-      const totalPurchaseDelivered = p.buy * deliveredCount;
-      const totalRevenue = p.sale * deliveredCount;
+      const totalPurchaseDelivered = buy * deliveredCount;
+      const totalRevenue = sale * deliveredCount;
       const netProfit = totalRevenue - totalPurchaseDelivered - totalOpsCost - totalCod;
 
       return {
         id: uuidv4(),
         pageName: pageName,
         productName: p.name || 'General',
-        totalOrders: p.qty,
+        totalOrders: qty,
         returnPercent: returnPercent,
         courierCancelPercent: 0,
-        salePrice: p.sale,
-        purchaseCost: p.buy,
+        salePrice: sale,
+        purchaseCost: buy,
         
-        // Save DELTA costs here. Storage service will merge and redistribute.
         pageTotalAdDollar: assignedAdDollar, 
         dollarRate: rate,
         pageTotalSalary: assignedSalary,
@@ -265,22 +315,19 @@ const EntryForm: React.FC = () => {
 
     alert("Batch Added Successfully!");
     
-    // Reset Batch Product Fields Only
-    setProducts([{ id: uuidv4(), name: '', qty: 0, sale: 0, buy: 0 }]);
-    
-    // We do NOT reset dollarAmount or pageSalary here, because they represent the "Total for Page".
-    // We update our 'loaded' tracker to match the new total so subsequent adds calculate delta correctly.
+    // Check if we need to auto-save any new product names to the list (simple strings)?
+    // User requested specifically managing Fixed Prices via manager. 
+    // We will just clear the form.
+    setProducts([{ id: uuidv4(), name: '', qty: '0', sale: '0', buy: '0' }]);
     setLoadedAdTotal(dollarAmount);
     setLoadedSalTotal(pageSalary);
-
-    // Refresh Sidebar
+    
     const updated = getAnalysisByDate(date);
     if (updated) setRecentEntries(updated.rows);
   };
 
   return (
     <div className="flex flex-col lg:flex-row min-h-screen bg-gray-50">
-      {/* Main Entry Form */}
       <div className="flex-1 p-8 space-y-6">
         {/* Page Info */}
         <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
@@ -301,6 +348,12 @@ const EntryForm: React.FC = () => {
                 <option value="">Select Page...</option>
                 {availablePages.map(p => <option key={p} value={p}>{p}</option>)}
               </select>
+              {pageName && (
+                  <div className="mt-2 text-xs bg-blue-50 text-blue-700 p-2 rounded border border-blue-100 flex justify-between">
+                    <span>Current Day Total:</span>
+                    <span className="font-bold">Ad: ${Math.round(loadedAdTotal)} | Sal: ৳{Math.round(loadedSalTotal)}</span>
+                  </div>
+              )}
             </div>
           </div>
         </div>
@@ -310,14 +363,14 @@ const EntryForm: React.FC = () => {
           <div className="flex justify-between items-center mb-4">
             <h3 className="text-blue-800 text-sm font-bold uppercase flex items-center gap-2">
               Product List 
-              <button onClick={() => setShowProductModal(true)} className="px-2 py-0.5 bg-white rounded border text-xs text-blue-600 hover:bg-blue-50">Manage Products</button>
+              <button onClick={() => setShowProductModal(true)} className="px-2 py-0.5 bg-white rounded border text-xs text-blue-600 hover:bg-blue-50">Manage Products & Prices</button>
             </h3>
             <span className="text-2xl font-bold text-blue-900">{totalBatchOrders} <span className="text-sm font-normal text-blue-600">Total Batch Orders</span></span>
           </div>
           
           <div className="space-y-3">
             <div className="grid grid-cols-12 gap-2 text-xs font-semibold text-blue-700 uppercase px-2">
-              <div className="col-span-4">Product Name</div>
+              <div className="col-span-4">Product Name (Select to Auto-fill)</div>
               <div className="col-span-2">Quantity</div>
               <div className="col-span-2">Sale Price (৳)</div>
               <div className="col-span-2">Buy Price (৳)</div>
@@ -329,22 +382,22 @@ const EntryForm: React.FC = () => {
                   <input 
                     list="product-suggestions"
                     className="w-full border rounded p-2" 
-                    placeholder="Product Name..." 
+                    placeholder="Type or Select..." 
                     value={p.name}
                     onChange={e => updateProduct(p.id, 'name', e.target.value)}
                   />
                   <datalist id="product-suggestions">
-                    {availableProducts.map(prod => <option key={prod} value={prod} />)}
+                    {savedProducts.map(prod => <option key={prod.id} value={prod.name} />)}
                   </datalist>
                 </div>
                 <div className="col-span-2">
-                  <input type="number" className="w-full border rounded p-2" placeholder="Qty" value={p.qty || ''} onChange={e => updateProduct(p.id, 'qty', Number(e.target.value))} />
+                  <input type="text" inputMode="decimal" className="w-full border rounded p-2" placeholder="Qty" value={p.qty} onChange={e => updateProduct(p.id, 'qty', e.target.value)} />
                 </div>
                 <div className="col-span-2">
-                  <input type="number" className="w-full border rounded p-2" placeholder="Sale" value={p.sale || ''} onChange={e => updateProduct(p.id, 'sale', Number(e.target.value))} />
+                  <input type="text" inputMode="decimal" className="w-full border rounded p-2" placeholder="Sale" value={p.sale} onChange={e => updateProduct(p.id, 'sale', e.target.value)} />
                 </div>
                 <div className="col-span-2">
-                  <input type="number" className="w-full border rounded p-2" placeholder="Buy" value={p.buy || ''} onChange={e => updateProduct(p.id, 'buy', Number(e.target.value))} />
+                  <input type="text" inputMode="decimal" className="w-full border rounded p-2" placeholder="Buy" value={p.buy} onChange={e => updateProduct(p.id, 'buy', e.target.value)} />
                 </div>
                 <div className="col-span-2 text-center">
                    {products.length > 1 && (
@@ -363,7 +416,7 @@ const EntryForm: React.FC = () => {
         <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
            <div className="flex justify-between items-center mb-4">
               <div>
-                <h3 className="text-gray-500 text-sm font-bold uppercase">Page Shared Costs (Total)</h3>
+                <h3 className="text-gray-500 text-sm font-bold uppercase">Page Shared Costs (Total Daily)</h3>
                 <p className="text-xs text-blue-500">
                   {pageName ? `Viewing Daily Total for: ${pageName}` : 'Select a page to load totals'}
                 </p>
@@ -397,7 +450,7 @@ const EntryForm: React.FC = () => {
                 </div>
               </div>
               <div>
-                <label className="text-xs font-semibold text-gray-600">Total Page Salary</label>
+                <label className="text-xs font-semibold text-gray-600">Total Page Salary (Daily)</label>
                 <input type="number" value={pageSalary} onChange={e => setPageSalary(Number(e.target.value))} className="w-full border rounded p-2 mt-1" />
               </div>
            </div>
@@ -494,21 +547,19 @@ const EntryForm: React.FC = () => {
       </div>
 
       {/* Modals */}
-      <ManageModal 
-        title="Manage Page Names" 
+      <ManagePageModal 
         isOpen={showPageModal} 
         onClose={() => setShowPageModal(false)} 
         items={availablePages}
         onAdd={savePageName}
         onDelete={deletePageName}
       />
-      <ManageModal 
-        title="Manage Product Names" 
+      <ManageProductModal 
         isOpen={showProductModal} 
         onClose={() => setShowProductModal(false)} 
-        items={availableProducts}
-        onAdd={saveProductName}
-        onDelete={deleteProductName}
+        products={savedProducts}
+        onAdd={saveSavedProduct}
+        onDelete={deleteSavedProduct}
       />
     </div>
   );
