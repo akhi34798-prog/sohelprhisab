@@ -153,28 +153,34 @@ export const recalculateDailyFinancials = (dayData: DailyAnalysisData): DailyAna
         const totalDelivery = Number(row.deliveryCharge) * tOrders;
         const totalPacking = Number(row.packagingCost) * tOrders;
 
-        // --- Operational Cost Per Unit (For Return Loss) ---
-        // Ops Cost = Ad + Sal + Mgmt + Office + Bonus + Del + Pack
-        const totalOpsForBatch = totalAdTk + distributedSalary + totalMgmt + totalOffice + totalBonus + totalDelivery + totalPacking;
-        const unitOpsCost = tOrders > 0 ? totalOpsForBatch / tOrders : 0;
-
-        // --- Return Loss (Total Return Tk) ---
-        // Cost wasted on returned items
-        const totalReturnLoss = unitOpsCost * returnCount;
-
         // --- COD ---
         const unitCod = (Number(row.salePrice) * Number(row.codChargePercent)) / 100;
         const totalCod = unitCod * deliveredCount;
+
+        // --- Operational Cost Per Unit (For Return Loss) ---
+        // Ops Cost = Ad + Sal + Mgmt + Office + Bonus + Del + Pack
+        // NOTE: Based on user feedback/screenshot, Return Loss seems to include COD amount too. 
+        // Logic: Loss = (Ops Cost + COD) * Return Count
+        const totalOpsForBatch = totalAdTk + distributedSalary + totalMgmt + totalOffice + totalBonus + totalDelivery + totalPacking;
+        const unitOpsCost = tOrders > 0 ? totalOpsForBatch / tOrders : 0;
+        
+        // COD per unit (nominal)
+        const nominalUnitCod = (Number(row.salePrice) * Number(row.codChargePercent)) / 100;
+
+        // --- Return Loss (Total Return Tk) ---
+        // Cost wasted on returned items. User screenshot implies ~199 loss for ~149 Ops + 50 COD.
+        const totalReturnLoss = (unitOpsCost + nominalUnitCod) * returnCount;
 
         // --- COGS (Maler Dam) ---
         // Delivered COGS (Expense)
         const cogsExpense = Number(row.purchaseCost) * deliveredCount; 
         
         // --- TOTAL COST (For Calculation) ---
-        // This matches the sum of all expense columns:
-        // Cogs(Delivered) + Ad + PageSal + Mgmt + Office + Bonus + Del + Pack + COD + ReturnLoss
-        // We include ReturnLoss here because "Total Cost" usually implies "Total Deductions from Sales"
-        // Net Profit = Sales - Total Cost
+        // As per screenshot logic: Sum of all unit costs.
+        // For accurate Net Profit: Revenue - (COGS + Ops + COD)
+        // Note: Return Loss is implicitly covered because we pay Ops for ALL orders, but only get Revenue for Delivered.
+        // However, if we want to display "Total Cost" column as the sum of all expenses incurred:
+        // Expenses = Purchase(Delivered) + Ops(All) + COD(Delivered).
         const totalCost = cogsExpense + totalOpsForBatch + totalCod + (Number(row.haziraBonus) || 0);
 
         // --- Revenue ---

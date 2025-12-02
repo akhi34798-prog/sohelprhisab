@@ -26,7 +26,6 @@ const ProfitAnalysis: React.FC = () => {
       setTotalDailyBonus(data.totalDailyBonus);
       setRows(data.rows);
     } else {
-      // Reset defaults if no data
       setRows([]);
       setTotalMgmtSalary(0);
       setTotalOfficeCost(0);
@@ -45,103 +44,83 @@ const ProfitAnalysis: React.FC = () => {
     setRows(rows.map(r => r.id === id ? { ...r, [field]: Number(value) || (field === 'pageName' || field === 'productName' ? value : 0) } : r));
   };
 
-  // --- CALCULATIONS (Local for Display) ---
+  // --- PREPARE DATA FOR DISPLAY (PER UNIT LOGIC) ---
+  const displayRows = useMemo(() => {
+    // 1. Calculate Page Aggregates first (for DOLLAR $ column)
+    const pageAggregates = new Map<string, number>();
+    rows.forEach(r => {
+      const current = pageAggregates.get(r.pageName) || 0;
+      pageAggregates.set(r.pageName, current + r.pageTotalAdDollar);
+    });
 
-  // Total Office Orders (Sum of all page orders)
-  const totalOfficeOrders = useMemo(() => rows.reduce((sum, r) => sum + Number(r.totalOrders), 0), [rows]);
-
-  // Derived Globals (Per Order) - Display purpose only, Storage engine does the hard work on save
-  const avgMgmtSalary = totalOfficeOrders > 0 ? totalMgmtSalary / totalOfficeOrders : 0;
-  const avgOfficeCost = totalOfficeOrders > 0 ? totalOfficeCost / totalOfficeOrders : 0;
-  const avgBonus = totalOfficeOrders > 0 ? totalDailyBonus / totalOfficeOrders : 0;
-
-  // Process Rows with Calculations
-  const calculatedRows = useMemo(() => {
     return rows.map(r => {
-      const returnCount = Math.round((r.totalOrders * r.returnPercent) / 100);
-      const deliveredCount = r.totalOrders - returnCount;
+      const tOrders = Number(r.totalOrders) || 1; // Avoid divide by zero for unit calcs
+      const returnCount = Math.round((tOrders * r.returnPercent) / 100);
+      const deliveredCount = tOrders - returnCount;
       const effectiveRate = r.dollarRate || dollarRate;
 
-      // 1. Costs Totals
-      const totalAdTk = r.pageTotalAdDollar * effectiveRate;
-      const totalMgmt = avgMgmtSalary * r.totalOrders;
-      const totalOffice = avgOfficeCost * r.totalOrders;
-      const totalBonus = avgBonus * r.totalOrders;
-      const totalDelivery = r.deliveryCharge * r.totalOrders;
-      const totalPacking = r.packagingCost * r.totalOrders;
+      // --- UNIT COSTS (For Display) ---
+      const unitAdTk = (r.pageTotalAdDollar * effectiveRate) / tOrders;
+      const unitSalary = r.pageTotalSalary / tOrders;
       
-      // COD only on Delivered
+      // Global Unit Costs (Recalculated in storage, but we derive for display check)
+      // Actually, storage saves the 'distributed' amounts indirectly via the total calculation.
+      // But we can back-calculate from the stored daily totals or use the row logic if we trust it.
+      // Let's re-derive standard Unit Costs based on storage logic for accuracy.
+      
+      // We need daily total orders for global unit calc
+      const dayTotalOrders = rows.reduce((s, row) => s + Number(row.totalOrders), 0) || 1;
+      const unitMgmt = totalMgmtSalary / dayTotalOrders;
+      const unitOffice = totalOfficeCost / dayTotalOrders;
+      const unitBonus = totalDailyBonus / dayTotalOrders;
+
+      const unitDelivery = r.deliveryCharge;
+      const unitPacking = r.packagingCost;
       const unitCod = (r.salePrice * r.codChargePercent) / 100;
-      const totalCod = unitCod * deliveredCount;
+      const unitReturnLoss = r.calculatedReturnLoss ? (r.calculatedReturnLoss / (deliveredCount || 1)) : 0; 
 
-      // Unit Operational Cost (for Return Loss)
-      // Ops Cost = Ad + Sal + Mgmt + Office + Bonus + Del + Pack
-      const totalOpsForBatch = totalAdTk + r.pageTotalSalary + totalMgmt + totalOffice + totalBonus + totalDelivery + totalPacking;
-      const unitOpCost = r.totalOrders > 0 ? totalOpsForBatch / r.totalOrders : 0;
-      
-      // Return Loss
-      // Formula: Total Cost (excluding Maler Dam) * Return Pitch
-      const totalReturnLossTaka = unitOpCost * returnCount;
+      // Total Cost Per Unit (Delivered Basis)
+      // Sum of all Unit Columns shown in PDF
+      const unitTotalCost = r.purchaseCost + unitAdTk + unitSalary + unitMgmt + unitBonus + unitOffice + unitCod + unitReturnLoss + unitDelivery + unitPacking;
 
-      const totalPurchaseDelivered = r.purchaseCost * deliveredCount; 
-      
-      // Expenses = Delivered COGS + All Ops + COD.
-      const totalCostDisplayed = totalPurchaseDelivered + totalOpsForBatch + totalCod + (r.haziraBonus || 0);
-
-      // Sales
-      const totalRevenue = r.salePrice * deliveredCount;
-
-      // Net Profit
-      const calculatedNet = totalRevenue - totalCostDisplayed;
-
-      // Per Pich Profit
-      const perPichProfit = deliveredCount > 0 ? calculatedNet / deliveredCount : 0;
+      // Net Profit Check
+      const calculatedNet = r.calculatedNetProfit || 0;
 
       return {
         ...r,
         returnCount,
         deliveredCount,
-        totalPurchaseDelivered,
-        totalAdTk,
-        totalMgmt,
-        totalOffice,
-        totalBonus,
-        totalDelivery,
-        totalPacking,
-        totalCod,
-        totalReturnLossTaka,
-        totalCostDisplayed,
-        totalSales: totalRevenue,
-        asolNetProfit: calculatedNet,
-        perPichProfit,
+        pageTotalAdDollarDisplay: pageAggregates.get(r.pageName) || 0, // Total Page Ad $
+        
+        // Unit Values
+        unitAdTk,
+        unitSalary,
+        unitMgmt,
+        unitBonus,
+        unitOffice,
+        unitCod,
+        unitReturnLoss,
+        unitDelivery,
+        unitPacking,
+        unitTotalCost,
+        
+        calculatedNet,
         effectiveRate
       };
     });
-  }, [rows, dollarRate, avgMgmtSalary, avgOfficeCost, avgBonus]);
+  }, [rows, dollarRate, totalMgmtSalary, totalOfficeCost, totalDailyBonus]);
 
   const totals = useMemo(() => {
-    return calculatedRows.reduce((acc, r) => ({
-      mallerDam: acc.mallerDam + r.totalPurchaseDelivered,
-      adTk: acc.adTk + r.totalAdTk,
-      pageSal: acc.pageSal + r.pageTotalSalary,
-      mgmtSal: acc.mgmtSal + r.totalMgmt,
-      bonus: acc.bonus + r.totalBonus,
-      office: acc.office + r.totalOffice,
-      cod: acc.cod + r.totalCod,
-      returnLoss: acc.returnLoss + r.totalReturnLossTaka,
-      del: acc.del + r.totalDelivery,
-      pack: acc.pack + r.totalPacking,
-      totalCost: acc.totalCost + r.totalCostDisplayed,
-      sale: acc.sale + r.totalSales,
+    return displayRows.reduce((acc, r) => ({
+      // Summing TOTALS for footer (not units)
+      totalReturnLoss: acc.totalReturnLoss + (r.calculatedReturnLoss || 0),
+      netProfit: acc.netProfit + r.calculatedNet,
       orders: acc.orders + Number(r.totalOrders),
-      returnCount: acc.returnCount + r.returnCount,
-      deliveredCount: acc.deliveredCount + r.deliveredCount,
-      netProfit: acc.netProfit + r.asolNetProfit
+      deliveredCount: acc.deliveredCount + r.deliveredCount
     }), { 
-      mallerDam: 0, adTk: 0, pageSal: 0, mgmtSal: 0, bonus: 0, office: 0, cod: 0, 
-      returnLoss: 0, del: 0, pack: 0, totalCost: 0, sale: 0, orders: 0, returnCount: 0, deliveredCount: 0, netProfit: 0 
+      totalReturnLoss: 0, netProfit: 0, orders: 0, deliveredCount: 0 
     });
-  }, [calculatedRows]);
+  }, [displayRows]);
 
   const handleSave = () => {
     const rawData: DailyAnalysisData = {
@@ -166,15 +145,11 @@ const ProfitAnalysis: React.FC = () => {
       <div className="flex flex-col md:flex-row justify-between items-center gap-4 mb-6">
         <div>
           <h2 className="text-2xl font-bold text-gray-800 flex items-center gap-2">
-            <Calculator className="text-blue-600" /> Product Profit Analysis
+            <Calculator className="text-blue-600" /> Daily Entry Report
           </h2>
-          <p className="text-sm text-gray-500">Edit and Analyze Daily Profit</p>
         </div>
-        <div className="flex gap-2 items-center bg-white p-2 rounded shadow">
+        <div className="flex gap-2 items-center bg-white p-2 rounded shadow no-print">
            <input type="date" value={date} onChange={e => setDate(e.target.value)} className="border rounded p-1" />
-           <div className="bg-blue-50 px-3 py-1 rounded text-blue-800 font-bold text-sm">
-             Total Orders: {totalOfficeOrders}
-           </div>
            <button onClick={handleSave} className="bg-blue-600 text-white px-4 py-1 rounded hover:bg-blue-700 flex items-center gap-2">
              <Save size={16} /> Update & Save
            </button>
@@ -184,199 +159,112 @@ const ProfitAnalysis: React.FC = () => {
       <div className="bg-white rounded-xl shadow border border-gray-200 overflow-x-auto pb-4">
         <div className="min-w-max p-2">
           <table className="w-full text-xs text-right border-collapse">
-            <thead className="bg-slate-800 text-white uppercase font-bold sticky top-0 z-10">
+            <thead className="bg-slate-50 text-slate-700 uppercase font-bold border-b border-slate-300">
               <tr>
-                <th className="p-2 w-24 text-left sticky left-0 bg-slate-800 border-r border-slate-600">Date</th>
-                <th className="p-2 w-32 text-left sticky left-24 bg-slate-800 border-r border-slate-600">Page Name</th>
-                <th className="p-2 w-32 text-left sticky left-56 bg-slate-800 border-r border-slate-600">Product Name</th>
+                <th className="p-2 text-left sticky left-0 bg-slate-50 border-r">DATE</th>
+                <th className="p-2 text-left sticky left-20 bg-slate-50 border-r">PAGE NAME</th>
+                <th className="p-2 text-left sticky left-48 bg-slate-50 border-r">PRODUCT NAME</th>
                 
-                <th className="p-2 w-24 bg-blue-900">Maller Dam</th>
-                <th className="p-2 w-24 bg-gray-700">Ad Cost</th>
-                <th className="p-2 w-20">Page Sallary</th>
-                <th className="p-2 w-20">Mng Sallary</th>
-                <th className="p-2 w-20">Bonus</th>
-                <th className="p-2 w-20">Office Cost</th>
-                <th className="p-2 w-20">COD</th>
-                <th className="p-2 w-24 bg-red-900">Return Cost</th>
-                <th className="p-2 w-20">Delivery Chrg</th>
-                <th className="p-2 w-20">Packing Cost</th>
+                <th className="p-2 bg-blue-50 text-blue-900">MALLER DAM</th>
+                <th className="p-2 bg-yellow-50 text-yellow-900">DOLLAR ($)</th>
+                <th className="p-2">RATE</th>
+                <th className="p-2">DOLLER</th>
+                <th className="p-2">PAGE SALLARY</th>
+                <th className="p-2">MNG SALLARY</th>
+                <th className="p-2">BONUS</th>
+                <th className="p-2">OFFICE COST</th>
+                <th className="p-2">COD</th>
+                <th className="p-2 text-red-600">RETURN COST</th>
+                <th className="p-2">DELIVERY CHRG</th>
+                <th className="p-2">PACKING COST</th>
                 
-                <th className="p-2 w-24 bg-gray-700 font-bold text-yellow-100 border-l border-r">TOTAL COST</th>
-                <th className="p-2 w-24 bg-blue-900 font-bold">Sale</th>
-                <th className="p-2 w-24 bg-green-800 text-white">Per Pich Profit</th>
-                <th className="p-2 w-24 text-red-300">Total Return Tk.</th>
+                <th className="p-2 font-bold bg-gray-100 border-x">TOTAL COST</th>
+                <th className="p-2 font-bold text-blue-700 bg-blue-50">SALE</th>
+                <th className="p-2 text-green-700">PER PICH PROFIT</th>
+                <th className="p-2 text-red-500">TOTAL RETURN TK.</th>
                 
-                <th className="p-2 w-16 bg-blue-900">Total Order</th>
-                <th className="p-2 w-12 bg-red-900">Parcent</th>
-                <th className="p-2 w-16">Retun Pich</th>
-                <th className="p-2 w-16 bg-green-900">Delivered Order</th>
-                
-                <th className="p-2 w-24 bg-slate-900 font-bold border-l text-white text-lg">NET PROFIT</th>
-                <th className="p-2 w-10">Action</th>
+                <th className="p-2 bg-slate-800 text-white">TOTAL ORDER</th>
+                <th className="p-2 bg-red-50 text-red-800">PARCENT</th>
+                <th className="p-2 no-print">Action</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
-              {calculatedRows.map((row) => (
+              {displayRows.map((row) => (
                 <tr key={row.id} className="hover:bg-gray-50">
-                  {/* Date */}
-                  <td className="p-2 text-left sticky left-0 bg-white border-r text-gray-500 font-mono">{date}</td>
+                  <td className="p-2 text-left sticky left-0 bg-white border-r text-gray-500 font-mono whitespace-nowrap">{date}</td>
+                  <td className="p-2 text-left sticky left-20 bg-white border-r font-bold">{row.pageName}</td>
+                  <td className="p-2 text-left sticky left-48 bg-white border-r text-gray-600">{row.productName}</td>
+
+                  {/* Maller Dam (Unit Buy) */}
+                  <td className="p-2 bg-blue-50 text-gray-900">{row.purchaseCost.toFixed(2)}</td>
+
+                  {/* DOLLAR ($) - Page Total */}
+                  <td className="p-2 bg-yellow-50 text-yellow-800 font-bold">${Math.round(row.pageTotalAdDollarDisplay)}</td>
+
+                  {/* RATE */}
+                  <td className="p-2 text-gray-500 font-mono">{row.effectiveRate}</td>
+
+                  {/* DOLLER (Unit Ad Tk) */}
+                  <td className="p-2">{row.unitAdTk.toFixed(2)}</td>
+
+                  {/* PAGE SALLARY (Unit) */}
+                  <td className="p-2">{row.unitSalary.toFixed(2)}</td>
+
+                  {/* MNG SALLARY (Unit) */}
+                  <td className="p-2">{row.unitMgmt.toFixed(2)}</td>
+
+                  {/* BONUS (Unit) */}
+                  <td className="p-2">{row.unitBonus.toFixed(2)}</td>
+
+                  {/* OFFICE COST (Unit) */}
+                  <td className="p-2">{row.unitOffice.toFixed(2)}</td>
+
+                  {/* COD (Unit) */}
+                  <td className="p-2">{row.unitCod.toFixed(2)}</td>
+
+                  {/* RETURN COST (Unit Loss distributed on Delivered) */}
+                  <td className="p-2 text-red-600">{row.unitReturnLoss.toFixed(2)}</td>
+
+                  {/* DELIVERY CHRG (Unit) */}
+                  <td className="p-2">{row.unitDelivery.toFixed(2)}</td>
+
+                  {/* PACKING COST (Unit) */}
+                  <td className="p-2">{row.unitPacking.toFixed(2)}</td>
+
+                  {/* TOTAL COST (Unit Sum) */}
+                  <td className="p-2 font-bold bg-gray-100 border-x">{row.unitTotalCost.toFixed(2)}</td>
+
+                  {/* SALE (Unit) */}
+                  <td className="p-2 font-bold text-blue-700 bg-blue-50">{row.salePrice.toFixed(2)}</td>
+
+                  {/* PER PICH PROFIT */}
+                  <td className={`p-2 font-bold ${row.unitTotalCost < row.salePrice ? 'text-green-600' : 'text-red-600'}`}>
+                    {(row.salePrice - row.unitTotalCost).toFixed(2)}
+                  </td>
+
+                  {/* TOTAL RETURN TK. */}
+                  <td className="p-2 text-red-500 font-bold">{row.calculatedReturnLoss?.toFixed(2)}</td>
+
+                  {/* TOTAL ORDER */}
+                  <td className="p-2 bg-slate-800 text-white font-bold text-center">{row.totalOrders}</td>
+
+                  {/* PARCENT */}
+                  <td className="p-2 bg-red-50 text-red-800 text-center">{row.returnPercent}%</td>
                   
-                  {/* Page Name */}
-                  <td className="p-2 sticky left-24 bg-white border-r">
-                    <input type="text" value={row.pageName} onChange={e => updateRow(row.id, 'pageName', e.target.value)} className="w-full border rounded px-1 font-medium bg-gray-50" />
-                  </td>
-                  
-                  {/* Product Name */}
-                  <td className="p-2 sticky left-56 bg-white border-r">
-                    <input type="text" value={row.productName} onChange={e => updateRow(row.id, 'productName', e.target.value)} className="w-full border rounded px-1" />
-                  </td>
-
-                  {/* Maller Dam (Delivered Value) */}
-                  <td className="p-2 bg-blue-50">
-                    <div className="font-bold text-gray-800">{Math.round(row.totalPurchaseDelivered).toLocaleString()}</div>
-                    <input type="number" inputMode="decimal" value={row.purchaseCost} onChange={e => updateRow(row.id, 'purchaseCost', e.target.value)} className="w-full text-[10px] border border-blue-200 rounded px-1 mt-1" placeholder="Unit Buy"/>
-                  </td>
-
-                  {/* Ad Cost (Total Tk) */}
-                  <td className="p-2 font-bold text-gray-600 bg-gray-50">
-                      <div>{Math.round(row.totalAdTk).toLocaleString()}</div>
-                      <div className="text-[10px] text-gray-400 font-normal">
-                         ${Math.round(row.pageTotalAdDollar)} @ {row.effectiveRate}
-                      </div>
-                  </td>
-
-                  {/* Page Sallary */}
-                  <td className="p-2">{Math.round(row.pageTotalSalary).toLocaleString()}</td>
-
-                  {/* Mng Sallary */}
-                  <td className="p-2 text-gray-500">{Math.round(row.totalMgmt).toLocaleString()}</td>
-
-                  {/* Bonus */}
-                  <td className="p-2 text-gray-500">{Math.round(row.totalBonus).toLocaleString()}</td>
-
-                  {/* Office Cost */}
-                  <td className="p-2 text-gray-500">{Math.round(row.totalOffice).toLocaleString()}</td>
-
-                  {/* COD */}
-                  <td className="p-2 text-gray-500">{Math.round(row.totalCod).toLocaleString()}</td>
-
-                  {/* Return Cost */}
-                  <td className="p-2 text-red-500 font-medium bg-red-50">{Math.round(row.totalReturnLossTaka).toLocaleString()}</td>
-
-                  {/* Delivery Chrg */}
-                  <td className="p-2">
-                    <div className="font-medium text-gray-700">{Math.round(row.totalDelivery).toLocaleString()}</div>
-                    <input type="number" inputMode="decimal" value={row.deliveryCharge} onChange={e => updateRow(row.id, 'deliveryCharge', e.target.value)} className="w-full text-[10px] border rounded px-1 mt-1 text-gray-400" placeholder="Unit"/>
-                  </td>
-
-                  {/* Packing Cost */}
-                  <td className="p-2">
-                    <div className="font-medium text-gray-700">{Math.round(row.totalPacking).toLocaleString()}</div>
-                    <input type="number" inputMode="decimal" value={row.packagingCost} onChange={e => updateRow(row.id, 'packagingCost', e.target.value)} className="w-full text-[10px] border rounded px-1 mt-1 text-gray-400" placeholder="Unit"/>
-                  </td>
-
-                  {/* TOTAL COST */}
-                  <td className="p-2 font-bold bg-slate-100 border-l border-r border-gray-200">{Math.round(row.totalCostDisplayed).toLocaleString()}</td>
-
-                  {/* Sale */}
-                  <td className="p-2 bg-blue-50">
-                    <div className="font-bold text-blue-700">{Math.round(row.totalSales).toLocaleString()}</div>
-                    <input type="number" inputMode="decimal" value={row.salePrice} onChange={e => updateRow(row.id, 'salePrice', e.target.value)} className="w-full text-[10px] border border-blue-200 rounded px-1 mt-1" placeholder="Unit Sale"/>
-                  </td>
-
-                  {/* Per Pich Profit */}
-                  <td className={`p-2 font-bold bg-green-50 ${row.perPichProfit >= 0 ? 'text-green-700' : 'text-red-600'}`}>
-                      {Math.round(row.perPichProfit).toLocaleString()}
-                  </td>
-
-                  {/* Total Return Tk. */}
-                  <td className="p-2 text-red-400">{Math.round(row.totalReturnLossTaka).toLocaleString()}</td>
-
-                  {/* Total Order */}
-                  <td className="p-1 bg-blue-50">
-                      <input type="number" inputMode="decimal" value={row.totalOrders} onChange={e => updateRow(row.id, 'totalOrders', e.target.value)} className="w-12 text-center bg-transparent font-bold text-blue-800" />
-                  </td>
-
-                  {/* Parcent */}
-                  <td className="p-1 bg-red-50">
-                      <input type="number" inputMode="decimal" value={row.returnPercent} onChange={e => updateRow(row.id, 'returnPercent', e.target.value)} className="w-10 text-center bg-transparent text-xs text-red-800" />
-                  </td>
-
-                  {/* Retun Pich */}
-                  <td className="p-1 text-center text-gray-500 font-medium">{row.returnCount}</td>
-
-                  {/* Delivered Order */}
-                  <td className="p-1 bg-green-50 text-center font-bold text-green-700">{row.deliveredCount}</td>
-
-                  {/* NET PROFIT */}
-                  <td className={`p-2 font-bold text-lg border-l-2 border-slate-300 ${row.asolNetProfit >= 0 ? 'bg-green-100 text-green-700' : 'bg-red-100 text-red-700'}`}>
-                    {Math.round(row.asolNetProfit).toLocaleString()}
-                  </td>
-
-                  {/* Action */}
-                  <td className="p-2 text-center">
+                  <td className="p-2 text-center no-print">
                     <button onClick={() => removeRow(row.id)} className="text-red-400 hover:text-red-600"><Trash2 size={16} /></button>
                   </td>
                 </tr>
               ))}
             </tbody>
             <tfoot>
-               <tr className="bg-slate-800 text-white font-bold text-xs shadow-inner">
-                 <td colSpan={3} className="p-3 text-right">TOTALS:</td>
+               <tr className="bg-slate-200 text-slate-800 font-bold text-xs border-t-2 border-slate-300">
+                 <td colSpan={18} className="p-3 text-right">TOTALS:</td>
                  
-                 {/* Maller Dam */}
-                 <td className="p-2 bg-blue-900">{Math.round(totals.mallerDam).toLocaleString()}</td>
-                 
-                 {/* Ad Cost */}
-                 <td className="p-2 bg-gray-700">{Math.round(totals.adTk).toLocaleString()}</td>
-                 
-                 {/* Page Salary */}
-                 <td className="p-2">{Math.round(totals.pageSal).toLocaleString()}</td>
-                 
-                 {/* Mgmt */}
-                 <td className="p-2">{Math.round(totals.mgmtSal).toLocaleString()}</td>
-                 
-                 {/* Bonus */}
-                 <td className="p-2">{Math.round(totals.bonus).toLocaleString()}</td>
-                 
-                 {/* Office */}
-                 <td className="p-2">{Math.round(totals.office).toLocaleString()}</td>
-                 
-                 {/* COD */}
-                 <td className="p-2">{Math.round(totals.cod).toLocaleString()}</td>
-                 
-                 {/* Return Cost */}
-                 <td className="p-2 bg-red-900">{Math.round(totals.returnLoss).toLocaleString()}</td>
-                 
-                 {/* Delivery */}
-                 <td className="p-2">{Math.round(totals.del).toLocaleString()}</td>
-                 
-                 {/* Packing */}
-                 <td className="p-2">{Math.round(totals.pack).toLocaleString()}</td>
-                 
-                 {/* TOTAL COST */}
-                 <td className="p-2 bg-gray-700">{Math.round(totals.totalCost).toLocaleString()}</td>
-                 
-                 {/* Sale */}
-                 <td className="p-2 bg-blue-900">{Math.round(totals.sale).toLocaleString()}</td>
-                 
-                 <td className="p-2 bg-green-900"></td>
-                 
-                 {/* Return Tk */}
-                 <td className="p-2">{Math.round(totals.returnLoss).toLocaleString()}</td>
-                 
-                 {/* Total Order */}
-                 <td className="p-2 text-center bg-blue-900">{totals.orders}</td>
-                 
-                 <td className="p-2 bg-red-900"></td>
-                 <td className="p-2 text-center">{totals.returnCount}</td>
-                 <td className="p-2 text-center bg-green-900">{totals.deliveredCount}</td>
-                 
-                 {/* NET PROFIT */}
-                 <td className={`p-2 text-lg border-l border-gray-600 ${totals.netProfit >= 0 ? 'text-green-400' : 'text-red-400'}`}>
-                   {Math.round(totals.netProfit).toLocaleString()}
-                 </td>
+                 <td className="p-2 bg-red-200 text-red-900">{Math.round(totals.totalReturnLoss).toLocaleString()}</td>
+                 <td className="p-2 bg-slate-900 text-white text-center">{totals.orders}</td>
                  <td className="p-2"></td>
+                 <td className="p-2 no-print"></td>
                </tr>
             </tfoot>
           </table>
