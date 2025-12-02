@@ -2,7 +2,7 @@
 import React, { useMemo } from 'react';
 import { getAnalysisData } from '../services/storage';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, LineChart, Line } from 'recharts';
-import { DollarSign, CheckCircle, XCircle, TrendingUp, AlertOctagon } from 'lucide-react';
+import { DollarSign, CheckCircle, XCircle, TrendingUp, AlertOctagon, ShoppingBag } from 'lucide-react';
 
 const Dashboard: React.FC = () => {
   const analysisData = getAnalysisData();
@@ -10,6 +10,9 @@ const Dashboard: React.FC = () => {
   const stats = useMemo(() => {
     let totalProfit = 0;
     
+    // Order Stats
+    let totalOrderCount = 0;
+
     // Delivered Stats
     let deliveredCount = 0;
     let deliveredValue = 0;
@@ -27,6 +30,8 @@ const Dashboard: React.FC = () => {
           const rPercent = Number(row.returnPercent);
           
           // Count
+          totalOrderCount += tOrders;
+          
           const rCount = Math.round((tOrders * rPercent) / 100);
           const dCount = tOrders - rCount;
 
@@ -45,6 +50,7 @@ const Dashboard: React.FC = () => {
 
     return { 
       totalProfit, 
+      totalOrderCount,
       deliveredCount, 
       deliveredValue, 
       returnedCount, 
@@ -79,71 +85,85 @@ const Dashboard: React.FC = () => {
       <p className="text-gray-500">Data source: Profit Analysis Sheets</p>
 
       {/* KPI Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
         
-        {/* 1. Net Profit */}
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex flex-col justify-between relative overflow-hidden">
+        {/* 1. Total Orders */}
+        <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-100 flex flex-col justify-between relative overflow-hidden">
+          <div className="absolute right-0 top-0 p-4 opacity-10">
+            <ShoppingBag size={64} className="text-purple-600"/>
+          </div>
+          <div>
+            <p className="text-xs font-bold text-gray-500 uppercase">Total Orders</p>
+            <h3 className="text-2xl font-bold text-purple-700 mt-2">
+              {stats.totalOrderCount}
+            </h3>
+          </div>
+          <div className="mt-2 text-xs text-purple-600 bg-purple-50 px-2 py-1 rounded w-max">
+            All Time
+          </div>
+        </div>
+
+        {/* 2. Net Profit */}
+        <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-100 flex flex-col justify-between relative overflow-hidden">
           <div className="absolute right-0 top-0 p-4 opacity-10">
             <DollarSign size={64} className="text-blue-600"/>
           </div>
           <div>
-            <p className="text-sm font-bold text-gray-500 uppercase">Total Net Profit</p>
+            <p className="text-xs font-bold text-gray-500 uppercase">Total Net Profit</p>
             <h3 className={`text-2xl font-bold mt-2 ${stats.totalProfit >= 0 ? 'text-gray-800' : 'text-red-600'}`}>
               ৳ {Math.round(stats.totalProfit).toLocaleString()}
             </h3>
           </div>
           <div className="mt-4 text-xs text-green-600 bg-green-50 px-2 py-1 rounded w-max">
-            Actual Profit after Expenses
+            Actual Profit
           </div>
         </div>
 
-        {/* 2. Delivered (Count & Value) */}
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex flex-col justify-between relative overflow-hidden">
+        {/* 3. Delivered (Count & Value) */}
+        <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-100 flex flex-col justify-between relative overflow-hidden">
           <div className="absolute right-0 top-0 p-4 opacity-10">
             <CheckCircle size={64} className="text-green-600"/>
           </div>
           <div>
-            <p className="text-sm font-bold text-gray-500 uppercase">Delivered Success</p>
+            <p className="text-xs font-bold text-gray-500 uppercase">Delivered Success</p>
             <div className="flex items-end gap-2 mt-2">
-               <h3 className="text-2xl font-bold text-gray-800">{stats.deliveredCount} <span className="text-sm font-normal text-gray-400">Pich</span></h3>
+               <h3 className="text-2xl font-bold text-gray-800">{stats.deliveredCount} <span className="text-xs font-normal text-gray-400">Pich</span></h3>
             </div>
-            <div className="text-lg font-bold text-green-700 mt-1">
+            <div className="text-sm font-bold text-green-700 mt-1">
                ৳ {Math.round(stats.deliveredValue).toLocaleString()}
             </div>
           </div>
-          <div className="mt-2 text-xs text-gray-400">Total Delivered Value</div>
         </div>
 
-        {/* 3. Returned (Count & Value) */}
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex flex-col justify-between relative overflow-hidden">
+        {/* 4. Returned (Count & Value) */}
+        <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-100 flex flex-col justify-between relative overflow-hidden">
           <div className="absolute right-0 top-0 p-4 opacity-10">
             <XCircle size={64} className="text-orange-600"/>
           </div>
           <div>
-            <p className="text-sm font-bold text-gray-500 uppercase">Returned / Cancelled</p>
+            <p className="text-xs font-bold text-gray-500 uppercase">Returned</p>
             <div className="flex items-end gap-2 mt-2">
-               <h3 className="text-2xl font-bold text-gray-800">{stats.returnedCount} <span className="text-sm font-normal text-gray-400">Pich</span></h3>
+               <h3 className="text-2xl font-bold text-gray-800">{stats.returnedCount} <span className="text-xs font-normal text-gray-400">Pich</span></h3>
             </div>
-            <div className="text-lg font-bold text-orange-600 mt-1">
+            <div className="text-sm font-bold text-orange-600 mt-1">
                ৳ {Math.round(stats.returnedValue).toLocaleString()}
             </div>
           </div>
-          <div className="mt-2 text-xs text-gray-400">Total Returned Sales Value</div>
         </div>
 
-        {/* 4. Return Loss (Expense) */}
-        <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex flex-col justify-between relative overflow-hidden">
+        {/* 5. Return Loss (Expense) */}
+        <div className="bg-white p-5 rounded-xl shadow-sm border border-gray-100 flex flex-col justify-between relative overflow-hidden">
           <div className="absolute right-0 top-0 p-4 opacity-10">
             <AlertOctagon size={64} className="text-red-600"/>
           </div>
           <div>
-            <p className="text-sm font-bold text-gray-500 uppercase">Operational Return Loss</p>
+            <p className="text-xs font-bold text-gray-500 uppercase">Operational Loss</p>
             <h3 className="text-2xl font-bold text-red-600 mt-2">
               -৳ {Math.round(stats.operationalReturnLoss).toLocaleString()}
             </h3>
           </div>
           <div className="mt-4 text-xs text-red-600 bg-red-50 px-2 py-1 rounded w-max">
-            Lost on Courier, Ad & Pack
+            Cost of Returns
           </div>
         </div>
 
@@ -188,4 +208,3 @@ const Dashboard: React.FC = () => {
 };
 
 export default Dashboard;
-    
