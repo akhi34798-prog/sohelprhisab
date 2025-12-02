@@ -1,6 +1,7 @@
+
 import React, { useMemo, useState } from 'react';
 import { getAnalysisData } from '../services/storage';
-import { Printer, LayoutGrid, List, BarChart3 } from 'lucide-react';
+import { Printer, LayoutGrid, List, BarChart3, Download } from 'lucide-react';
 
 const SummaryReport: React.FC = () => {
   const [view, setView] = useState<'matrix' | 'category' | 'detailed'>('category');
@@ -122,14 +123,14 @@ const SummaryReport: React.FC = () => {
 
   return (
     <div className="p-8 space-y-6">
-      <div className="flex flex-col md:flex-row justify-between items-center gap-4">
+      <div className="flex flex-col md:flex-row justify-between items-center gap-4 no-print">
         <div>
            <h2 className="text-3xl font-bold text-gray-800">Summary Report</h2>
            <p className="text-gray-500">Monthly breakdown and daily profit analysis</p>
         </div>
         
         {/* Controls */}
-        <div className="flex flex-wrap gap-2 items-center bg-white p-2 rounded-lg border shadow-sm no-print">
+        <div className="flex flex-wrap gap-2 items-center bg-white p-2 rounded-lg border shadow-sm">
            <div className="flex border rounded overflow-hidden">
              <button onClick={() => setView('matrix')} className={`px-3 py-2 text-sm flex items-center gap-1 ${view === 'matrix' ? 'bg-blue-600 text-white' : 'hover:bg-gray-50'}`}><LayoutGrid size={16}/> Matrix</button>
              <button onClick={() => setView('category')} className={`px-3 py-2 text-sm flex items-center gap-1 ${view === 'category' ? 'bg-blue-600 text-white' : 'hover:bg-gray-50'}`}><BarChart3 size={16}/> Category</button>
@@ -148,13 +149,15 @@ const SummaryReport: React.FC = () => {
              <input type="date" value={selectedDay} onChange={e => {setSelectedDay(e.target.value); setSelectedMonth('');}} className="border rounded px-2 py-1 text-sm" />
            </div>
 
-           <button onClick={() => window.print()} className="ml-2 bg-slate-800 text-white px-3 py-2 rounded text-sm flex items-center gap-2 hover:bg-slate-900"><Printer size={16}/> Print</button>
+           <button onClick={() => window.print()} className="ml-2 bg-slate-800 text-white px-3 py-2 rounded text-sm flex items-center gap-2 hover:bg-slate-900">
+             <Download size={16}/> Print / PDF ({view})
+           </button>
         </div>
       </div>
 
       {/* MATRIX VIEW */}
       {view === 'matrix' && (
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-x-auto">
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 overflow-x-auto print-section">
           <div className="p-4 border-b bg-gray-50 flex justify-between items-center">
              <h3 className="font-bold text-gray-700">Profit Matrix (Page vs Date)</h3>
              <span className={`text-lg font-bold ${matrixData.totalProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}>Total Profit: {Math.round(matrixData.totalProfit).toLocaleString()} ৳</span>
@@ -201,7 +204,7 @@ const SummaryReport: React.FC = () => {
 
       {/* CATEGORY VIEW */}
       {view === 'category' && (
-        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6">
+        <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-6 print-section">
            <h3 className="font-bold text-gray-700 mb-4 border-b pb-2">Category Breakdown (Financials)</h3>
            <div className="overflow-x-auto">
              <table className="w-full text-sm">
@@ -250,7 +253,7 @@ const SummaryReport: React.FC = () => {
 
       {/* DETAILED DAILY VIEW */}
       {view === 'detailed' && (
-        <div className="space-y-4">
+        <div className="space-y-4 print-section">
           <div className="bg-white p-4 rounded-xl shadow-sm border border-gray-100">
              <h3 className="font-bold text-gray-700">Detailed Daily Breakdown</h3>
           </div>
@@ -301,3 +304,4 @@ const SummaryReport: React.FC = () => {
 };
 
 export default SummaryReport;
+    

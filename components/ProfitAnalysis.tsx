@@ -42,35 +42,16 @@ const ProfitAnalysis: React.FC = () => {
 
   const updateRow = (id: string, field: keyof AnalysisRow, value: string) => {
     // Helper to allow typing decimals (e.g. "50.") without forcing Number() immediately
-    // We store the value as string/number in the state temporarily if needed, 
-    // but here we just ensure the field matches the type. 
-    // Ideally we update the state with the raw value, but since rows are strongly typed,
-    // we will cast safely.
-    
-    // For numeric fields, allow empty string or valid decimal format
     if (value === '' || /^\d*\.?\d*$/.test(value)) {
         setRows(rows.map(r => {
             if (r.id === id) {
-                // If empty string, set 0 or keep empty logic if type supports it. 
-                // Here we set 0 for calculations but might need to handle UI text separately.
-                // A simple approach is using Number() but handling the UI via a separate local state or just accepting strict parsing.
-                // To fix the "dot" issue, we usually need the input to be uncontrolled or handle string state.
-                // Since this is a deep update, we will simply parse float for now but let's try to preserve text behavior if possible.
-                // Actually, the best way here without complex local state is to just parse. 
-                // If user types "50.", parseFloat is 50. We lose the dot.
-                // To fix this properly, we need input components. 
-                // BUT for now, let's use a robust approach: 
-                
-                const numValue = value === '' ? 0 : value; // Keep string if possible? No, type is number.
-                // Workaround: We will update the value. The UI input should use type="text" or handle it.
-                return { ...r, [field]: value }; // We might need to cast to any to bypass TS for the intermediate state or update types.
+                return { ...r, [field]: value }; // Temporarily store as string for typing
             }
             return r;
-        }) as any); // cast as any to allow string injection for typing
+        }) as any); 
     }
   };
   
-  // Safe blur handler to ensure numbers are saved
   const onBlurRow = (id: string, field: keyof AnalysisRow, value: string) => {
       setRows(rows.map(r => r.id === id ? { ...r, [field]: Number(value) || 0 } : r));
   };
@@ -81,21 +62,23 @@ const ProfitAnalysis: React.FC = () => {
     const pageAggregates = new Map<string, number>();
     rows.forEach(r => {
       const current = pageAggregates.get(r.pageName) || 0;
-      // Ensure we treat these as numbers
       pageAggregates.set(r.pageName, current + Number(r.pageTotalAdDollar));
     });
 
     return rows.map(r => {
-      const tOrders = Number(r.totalOrders) || 1; // Avoid divide by zero for unit calcs
+      const tOrders = Number(r.totalOrders) || 0;
       const returnCount = Math.round((tOrders * Number(r.returnPercent)) / 100);
       const deliveredCount = tOrders - returnCount;
       const effectiveRate = Number(r.dollarRate) || dollarRate;
 
       // --- UNIT COSTS (For Display) ---
-      const unitAdTk = (Number(r.pageTotalAdDollar) * effectiveRate) / tOrders;
-      const unitSalary = Number(r.pageTotalSalary) / tOrders;
+      // Divisor is tOrders (All Orders) for Ops Costs, but deliveredCount for COGS logic in some contexts.
+      // Standard: Cost per Unit produced (tOrders)
       
-      // Global Unit Costs (Recalculated in storage, but we derive for display check)
+      const unitAdTk = tOrders > 0 ? (Number(r.pageTotalAdDollar) * effectiveRate) / tOrders : 0;
+      const unitSalary = tOrders > 0 ? Number(r.pageTotalSalary) / tOrders : 0;
+      
+      // Global Unit Costs 
       const dayTotalOrders = rows.reduce((s, row) => s + Number(row.totalOrders), 0) || 1;
       const unitMgmt = totalMgmtSalary / dayTotalOrders;
       const unitOffice = totalOfficeCost / dayTotalOrders;
@@ -103,8 +86,16 @@ const ProfitAnalysis: React.FC = () => {
 
       const unitDelivery = Number(r.deliveryCharge);
       const unitPacking = Number(r.packagingCost);
+      
+      // COD per delivered unit (nominal)
       const unitCod = (Number(r.salePrice) * Number(r.codChargePercent)) / 100;
-      const unitReturnLoss = r.calculatedReturnLoss ? (r.calculatedReturnLoss / (deliveredCount || 1)) : 0; 
+      
+      // Return Loss (Displayed per delivered unit usually, but here we show per total unit for uniformity or Total Amount)
+      // Screenshot had "RETURN COST" around 49.85. 
+      // Let's stick to showing the Unit equivalent of the loss spread over delivered items? 
+      // Or just the raw cost per return? The column says "RETURN COST".
+      // Let's use the calculated return loss allocated per delivered unit.
+      const unitReturnLoss = (r.calculatedReturnLoss || 0) / (deliveredCount || 1); 
 
       // Total Cost Per Unit (Delivered Basis)
       const unitTotalCost = Number(r.purchaseCost) + unitAdTk + unitSalary + unitMgmt + unitBonus + unitOffice + unitCod + unitReturnLoss + unitDelivery + unitPacking;
@@ -117,7 +108,7 @@ const ProfitAnalysis: React.FC = () => {
         ...r,
         returnCount,
         deliveredCount,
-        pageTotalAdDollarDisplay: pageAggregates.get(r.pageName) || 0, // Total Page Ad $
+        pageTotalAdDollarDisplay: pageAggregates.get(r.pageName) || 0,
         
         // Unit Values
         unitAdTk,
@@ -139,19 +130,36 @@ const ProfitAnalysis: React.FC = () => {
   }, [rows, dollarRate, totalMgmtSalary, totalOfficeCost, totalDailyBonus]);
 
   const totals = useMemo(() => {
-    return displayRows.reduce((acc, r) => ({
-      // Summing TOTALS for footer (not units)
-      totalReturnLoss: acc.totalReturnLoss + (r.calculatedReturnLoss || 0),
-      netProfit: acc.netProfit + r.calculatedNet,
-      orders: acc.orders + Number(r.totalOrders),
-      deliveredCount: acc.deliveredCount + r.deliveredCount
-    }), { 
-      totalReturnLoss: 0, netProfit: 0, orders: 0, deliveredCount: 0 
+    return displayRows.reduce((acc, r) => {
+        const tOrders = Number(r.totalOrders);
+        const delivered = r.deliveredCount;
+        
+        return {
+          mallerDam: acc.mallerDam + (Number(r.purchaseCost) * tOrders), // Total Inventory Value
+          pageAdDollar: acc.pageAdDollar + Number(r.pageTotalAdDollar),
+          adTk: acc.adTk + (Number(r.pageTotalAdDollar) * r.effectiveRate),
+          pageSalary: acc.pageSalary + Number(r.pageTotalSalary),
+          mgmt: acc.mgmt + (r.unitMgmt * tOrders),
+          bonus: acc.bonus + (r.unitBonus * tOrders),
+          office: acc.office + (r.unitOffice * tOrders),
+          cod: acc.cod + (r.unitCod * delivered),
+          returnLoss: acc.returnLoss + (r.calculatedReturnLoss || 0),
+          delivery: acc.delivery + (r.unitDelivery * tOrders),
+          packing: acc.packing + (r.unitPacking * tOrders),
+          
+          totalCost: acc.totalCost + (r.unitTotalCost * delivered), // Approx total cost of delivered goods
+          
+          sales: acc.sales + (Number(r.salePrice) * delivered),
+          netProfit: acc.netProfit + r.calculatedNet,
+          orders: acc.orders + tOrders,
+          deliveredCount: acc.deliveredCount + delivered
+        };
+    }, { 
+      mallerDam: 0, pageAdDollar: 0, adTk: 0, pageSalary: 0, mgmt: 0, bonus: 0, office: 0, cod: 0, returnLoss: 0, delivery: 0, packing: 0, totalCost: 0, sales: 0, netProfit: 0, orders: 0, deliveredCount: 0 
     });
   }, [displayRows]);
 
   const handleSave = () => {
-    // Ensure all numbers are clean before saving
     const cleanRows = rows.map(r => ({
         ...r,
         purchaseCost: Number(r.purchaseCost),
@@ -313,9 +321,25 @@ const ProfitAnalysis: React.FC = () => {
             </tbody>
             <tfoot>
                <tr className="bg-slate-200 text-slate-800 font-bold text-xs border-t-2 border-slate-300">
-                 <td colSpan={18} className="p-3 text-right">TOTALS:</td>
+                 <td colSpan={3} className="p-3 text-right">TOTALS (Day):</td>
                  
-                 <td className="p-2 bg-red-200 text-red-900">{Math.round(totals.totalReturnLoss).toLocaleString()}</td>
+                 <td className="p-2 bg-blue-100 text-blue-900">{Math.round(totals.mallerDam).toLocaleString()}</td>
+                 <td className="p-2 bg-yellow-100 text-yellow-900">${Math.round(totals.pageAdDollar)}</td>
+                 <td className="p-2"></td>
+                 <td className="p-2 bg-gray-100">{Math.round(totals.adTk).toLocaleString()}</td>
+                 <td className="p-2 bg-gray-100">{Math.round(totals.pageSalary).toLocaleString()}</td>
+                 <td className="p-2 bg-gray-100">{Math.round(totals.mgmt).toLocaleString()}</td>
+                 <td className="p-2 bg-gray-100">{Math.round(totals.bonus).toLocaleString()}</td>
+                 <td className="p-2 bg-gray-100">{Math.round(totals.office).toLocaleString()}</td>
+                 <td className="p-2 bg-gray-100">{Math.round(totals.cod).toLocaleString()}</td>
+                 <td className="p-2 bg-red-200 text-red-900">{Math.round(totals.returnLoss).toLocaleString()}</td>
+                 <td className="p-2 bg-gray-100">{Math.round(totals.delivery).toLocaleString()}</td>
+                 <td className="p-2 bg-gray-100">{Math.round(totals.packing).toLocaleString()}</td>
+                 <td className="p-2 font-bold">{Math.round(totals.totalCost).toLocaleString()}</td>
+                 <td className="p-2 font-bold text-blue-800 bg-blue-100">{Math.round(totals.sales).toLocaleString()}</td>
+                 <td className="p-2"></td>
+                 <td className="p-2 bg-red-200 text-red-900">{Math.round(totals.returnLoss).toLocaleString()}</td>
+
                  <td className="p-2 bg-slate-900 text-white text-center">{totals.orders}</td>
                  <td className="p-2"></td>
                  <td className={`p-2 border-l border-slate-300 ${totals.netProfit >= 0 ? 'bg-green-200 text-green-900' : 'bg-red-200 text-red-900'}`}>

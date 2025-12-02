@@ -26,18 +26,18 @@ const DataSheet: React.FC = () => {
       });
 
       day.rows.forEach((row: AnalysisRow) => {
-        const tOrders = Number(row.totalOrders) || 1;
+        const tOrders = Number(row.totalOrders) || 0;
         const returnCount = Math.round((tOrders * Number(row.returnPercent)) / 100);
         const deliveredCount = tOrders - returnCount;
         
         const effectiveRate = Number(row.dollarRate) || Number(day.dollarRate);
         
         // --- UNIT METRICS ---
-        const unitAdTk = (row.pageTotalAdDollar * effectiveRate) / tOrders;
-        const unitSalary = row.pageTotalSalary / tOrders;
+        const unitAdTk = tOrders > 0 ? (row.pageTotalAdDollar * effectiveRate) / tOrders : 0;
+        const unitSalary = tOrders > 0 ? row.pageTotalSalary / tOrders : 0;
         const unitCod = (Number(row.salePrice) * Number(row.codChargePercent)) / 100;
         
-        // Return Loss per Delivered Unit (Displayed as "RETURN COST")
+        // Return Loss per Delivered Unit
         const totalReturnLoss = row.calculatedReturnLoss || 0;
         const unitReturnCost = deliveredCount > 0 ? totalReturnLoss / deliveredCount : 0;
         
@@ -70,7 +70,12 @@ const DataSheet: React.FC = () => {
           
           perPichProfit: row.salePrice - unitTotalCost,
           totalReturnTk: totalReturnLoss,
-          netProfit: row.calculatedNetProfit || 0
+          netProfit: row.calculatedNetProfit || 0,
+          
+          // Raw values for footer sum
+          rawPageAdDollar: row.pageTotalAdDollar,
+          rawPageSalary: row.pageTotalSalary,
+          rawDelivered: deliveredCount
         });
       });
     });
@@ -82,11 +87,31 @@ const DataSheet: React.FC = () => {
 
   // Footer Totals
   const totals = useMemo(() => {
-    return filteredRows.reduce((acc, r) => ({
-      returnLoss: acc.returnLoss + r.totalReturnTk,
-      orders: acc.orders + r.totalOrders,
-      netProfit: acc.netProfit + r.netProfit
-    }), { returnLoss: 0, orders: 0, netProfit: 0 });
+    return filteredRows.reduce((acc, r) => {
+        const tOrders = r.totalOrders;
+        const delivered = r.rawDelivered;
+        return {
+          mallerDam: acc.mallerDam + (Number(r.mallerDam) * tOrders), 
+          pageAdDollar: acc.pageAdDollar + Number(r.rawPageAdDollar),
+          adTk: acc.adTk + (Number(r.rawPageAdDollar) * r.rate),
+          pageSalary: acc.pageSalary + Number(r.rawPageSalary),
+          mgmt: acc.mgmt + (r.mngSalUnit * tOrders),
+          bonus: acc.bonus + (r.bonusUnit * tOrders),
+          office: acc.office + (r.officeUnit * tOrders),
+          cod: acc.cod + (r.codUnit * delivered),
+          returnLoss: acc.returnLoss + r.totalReturnTk,
+          delivery: acc.delivery + (r.delUnit * tOrders),
+          packing: acc.packing + (r.packUnit * tOrders),
+          
+          totalCost: acc.totalCost + (r.totalCostUnit * delivered), 
+          
+          sales: acc.sales + (Number(r.saleUnit) * delivered),
+          netProfit: acc.netProfit + r.netProfit,
+          orders: acc.orders + tOrders
+        };
+    }, { 
+      mallerDam: 0, pageAdDollar: 0, adTk: 0, pageSalary: 0, mgmt: 0, bonus: 0, office: 0, cod: 0, returnLoss: 0, delivery: 0, packing: 0, totalCost: 0, sales: 0, netProfit: 0, orders: 0 
+    });
   }, [filteredRows]);
 
   return (
@@ -153,7 +178,7 @@ const DataSheet: React.FC = () => {
                   <td className="p-3 text-left font-bold border-r sticky left-24 bg-white">{row.pageName}</td>
                   <td className="p-3 text-left border-r sticky left-56 bg-white text-gray-500">{row.productName}</td>
                   
-                  <td className="p-3 bg-blue-50">{row.mallerDam.toFixed(2)}</td>
+                  <td className="p-3 bg-blue-50">{Number(row.mallerDam).toFixed(2)}</td>
                   <td className="p-3 bg-yellow-50 text-yellow-800 font-bold">${Math.round(row.pageDollarTotal)}</td>
                   <td className="p-3 text-gray-500 font-mono">{row.rate}</td>
                   <td className="p-3">{row.dollerUnit.toFixed(2)}</td>
@@ -167,7 +192,7 @@ const DataSheet: React.FC = () => {
                   <td className="p-3">{row.packUnit.toFixed(2)}</td>
                   
                   <td className="p-3 font-bold bg-gray-100 border-x">{row.totalCostUnit.toFixed(2)}</td>
-                  <td className="p-3 font-bold text-blue-700 bg-blue-50">{row.saleUnit.toFixed(2)}</td>
+                  <td className="p-3 font-bold text-blue-700 bg-blue-50">{Number(row.saleUnit).toFixed(2)}</td>
                   
                   <td className={`p-3 font-bold ${row.perPichProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
                     {row.perPichProfit.toFixed(2)}
@@ -184,9 +209,25 @@ const DataSheet: React.FC = () => {
             </tbody>
             <tfoot>
                <tr className="bg-slate-200 text-slate-800 font-bold text-xs border-t-2 border-slate-300">
-                 <td colSpan={18} className="p-3 text-right">TOTALS:</td>
+                 <td colSpan={3} className="p-3 text-right">TOTALS:</td>
                  
-                 <td className="p-3 bg-red-200 text-red-900">{Math.round(totals.returnLoss).toLocaleString()}</td>
+                 <td className="p-2 bg-blue-100 text-blue-900">{Math.round(totals.mallerDam).toLocaleString()}</td>
+                 <td className="p-2 bg-yellow-100 text-yellow-900">${Math.round(totals.pageAdDollar)}</td>
+                 <td className="p-2"></td>
+                 <td className="p-2 bg-gray-100">{Math.round(totals.adTk).toLocaleString()}</td>
+                 <td className="p-2 bg-gray-100">{Math.round(totals.pageSalary).toLocaleString()}</td>
+                 <td className="p-2 bg-gray-100">{Math.round(totals.mgmt).toLocaleString()}</td>
+                 <td className="p-2 bg-gray-100">{Math.round(totals.bonus).toLocaleString()}</td>
+                 <td className="p-2 bg-gray-100">{Math.round(totals.office).toLocaleString()}</td>
+                 <td className="p-2 bg-gray-100">{Math.round(totals.cod).toLocaleString()}</td>
+                 <td className="p-2 bg-red-200 text-red-900">{Math.round(totals.returnLoss).toLocaleString()}</td>
+                 <td className="p-2 bg-gray-100">{Math.round(totals.delivery).toLocaleString()}</td>
+                 <td className="p-2 bg-gray-100">{Math.round(totals.packing).toLocaleString()}</td>
+                 <td className="p-2 font-bold">{Math.round(totals.totalCost).toLocaleString()}</td>
+                 <td className="p-2 font-bold text-blue-800 bg-blue-100">{Math.round(totals.sales).toLocaleString()}</td>
+                 <td className="p-2"></td>
+                 <td className="p-2 bg-red-200 text-red-900">{Math.round(totals.returnLoss).toLocaleString()}</td>
+
                  <td className="p-3 bg-slate-900 text-white text-center">{totals.orders}</td>
                  <td className="p-3"></td>
                  <td className={`p-3 border-l border-slate-300 ${totals.netProfit >= 0 ? 'bg-green-200 text-green-900' : 'bg-red-200 text-red-900'}`}>
