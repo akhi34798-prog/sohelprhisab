@@ -64,11 +64,6 @@ const ProfitAnalysis: React.FC = () => {
       const unitSalary = r.pageTotalSalary / tOrders;
       
       // Global Unit Costs (Recalculated in storage, but we derive for display check)
-      // Actually, storage saves the 'distributed' amounts indirectly via the total calculation.
-      // But we can back-calculate from the stored daily totals or use the row logic if we trust it.
-      // Let's re-derive standard Unit Costs based on storage logic for accuracy.
-      
-      // We need daily total orders for global unit calc
       const dayTotalOrders = rows.reduce((s, row) => s + Number(row.totalOrders), 0) || 1;
       const unitMgmt = totalMgmtSalary / dayTotalOrders;
       const unitOffice = totalOfficeCost / dayTotalOrders;
@@ -80,11 +75,11 @@ const ProfitAnalysis: React.FC = () => {
       const unitReturnLoss = r.calculatedReturnLoss ? (r.calculatedReturnLoss / (deliveredCount || 1)) : 0; 
 
       // Total Cost Per Unit (Delivered Basis)
-      // Sum of all Unit Columns shown in PDF
       const unitTotalCost = r.purchaseCost + unitAdTk + unitSalary + unitMgmt + unitBonus + unitOffice + unitCod + unitReturnLoss + unitDelivery + unitPacking;
 
       // Net Profit Check
       const calculatedNet = r.calculatedNetProfit || 0;
+      const perPichProfit = r.salePrice - unitTotalCost;
 
       return {
         ...r,
@@ -105,6 +100,7 @@ const ProfitAnalysis: React.FC = () => {
         unitTotalCost,
         
         calculatedNet,
+        perPichProfit,
         effectiveRate
       };
     });
@@ -185,6 +181,7 @@ const ProfitAnalysis: React.FC = () => {
                 
                 <th className="p-2 bg-slate-800 text-white">TOTAL ORDER</th>
                 <th className="p-2 bg-red-50 text-red-800">PARCENT</th>
+                <th className="p-2 bg-green-50 text-green-800 border-l border-green-200">NET PROFIT</th>
                 <th className="p-2 no-print">Action</th>
               </tr>
             </thead>
@@ -195,61 +192,32 @@ const ProfitAnalysis: React.FC = () => {
                   <td className="p-2 text-left sticky left-20 bg-white border-r font-bold">{row.pageName}</td>
                   <td className="p-2 text-left sticky left-48 bg-white border-r text-gray-600">{row.productName}</td>
 
-                  {/* Maller Dam (Unit Buy) */}
                   <td className="p-2 bg-blue-50 text-gray-900">{row.purchaseCost.toFixed(2)}</td>
-
-                  {/* DOLLAR ($) - Page Total */}
                   <td className="p-2 bg-yellow-50 text-yellow-800 font-bold">${Math.round(row.pageTotalAdDollarDisplay)}</td>
-
-                  {/* RATE */}
                   <td className="p-2 text-gray-500 font-mono">{row.effectiveRate}</td>
-
-                  {/* DOLLER (Unit Ad Tk) */}
                   <td className="p-2">{row.unitAdTk.toFixed(2)}</td>
-
-                  {/* PAGE SALLARY (Unit) */}
                   <td className="p-2">{row.unitSalary.toFixed(2)}</td>
-
-                  {/* MNG SALLARY (Unit) */}
                   <td className="p-2">{row.unitMgmt.toFixed(2)}</td>
-
-                  {/* BONUS (Unit) */}
                   <td className="p-2">{row.unitBonus.toFixed(2)}</td>
-
-                  {/* OFFICE COST (Unit) */}
                   <td className="p-2">{row.unitOffice.toFixed(2)}</td>
-
-                  {/* COD (Unit) */}
                   <td className="p-2">{row.unitCod.toFixed(2)}</td>
-
-                  {/* RETURN COST (Unit Loss distributed on Delivered) */}
                   <td className="p-2 text-red-600">{row.unitReturnLoss.toFixed(2)}</td>
-
-                  {/* DELIVERY CHRG (Unit) */}
                   <td className="p-2">{row.unitDelivery.toFixed(2)}</td>
-
-                  {/* PACKING COST (Unit) */}
                   <td className="p-2">{row.unitPacking.toFixed(2)}</td>
-
-                  {/* TOTAL COST (Unit Sum) */}
+                  
                   <td className="p-2 font-bold bg-gray-100 border-x">{row.unitTotalCost.toFixed(2)}</td>
-
-                  {/* SALE (Unit) */}
                   <td className="p-2 font-bold text-blue-700 bg-blue-50">{row.salePrice.toFixed(2)}</td>
-
-                  {/* PER PICH PROFIT */}
-                  <td className={`p-2 font-bold ${row.unitTotalCost < row.salePrice ? 'text-green-600' : 'text-red-600'}`}>
-                    {(row.salePrice - row.unitTotalCost).toFixed(2)}
+                  
+                  <td className={`p-2 font-bold ${row.perPichProfit >= 0 ? 'text-green-600' : 'text-red-600'}`}>
+                    {row.perPichProfit.toFixed(2)}
                   </td>
-
-                  {/* TOTAL RETURN TK. */}
+                  
                   <td className="p-2 text-red-500 font-bold">{row.calculatedReturnLoss?.toFixed(2)}</td>
-
-                  {/* TOTAL ORDER */}
                   <td className="p-2 bg-slate-800 text-white font-bold text-center">{row.totalOrders}</td>
-
-                  {/* PARCENT */}
                   <td className="p-2 bg-red-50 text-red-800 text-center">{row.returnPercent}%</td>
+                  <td className={`p-2 font-bold border-l border-green-100 ${row.calculatedNet >= 0 ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
+                    {Math.round(row.calculatedNet).toLocaleString()}
+                  </td>
                   
                   <td className="p-2 text-center no-print">
                     <button onClick={() => removeRow(row.id)} className="text-red-400 hover:text-red-600"><Trash2 size={16} /></button>
@@ -264,6 +232,9 @@ const ProfitAnalysis: React.FC = () => {
                  <td className="p-2 bg-red-200 text-red-900">{Math.round(totals.totalReturnLoss).toLocaleString()}</td>
                  <td className="p-2 bg-slate-900 text-white text-center">{totals.orders}</td>
                  <td className="p-2"></td>
+                 <td className={`p-2 border-l border-slate-300 ${totals.netProfit >= 0 ? 'bg-green-200 text-green-900' : 'bg-red-200 text-red-900'}`}>
+                    {Math.round(totals.netProfit).toLocaleString()}
+                 </td>
                  <td className="p-2 no-print"></td>
                </tr>
             </tfoot>

@@ -69,7 +69,8 @@ const DataSheet: React.FC = () => {
           saleUnit: row.salePrice,
           
           perPichProfit: row.salePrice - unitTotalCost,
-          totalReturnTk: totalReturnLoss
+          totalReturnTk: totalReturnLoss,
+          netProfit: row.calculatedNetProfit || 0
         });
       });
     });
@@ -83,8 +84,9 @@ const DataSheet: React.FC = () => {
   const totals = useMemo(() => {
     return filteredRows.reduce((acc, r) => ({
       returnLoss: acc.returnLoss + r.totalReturnTk,
-      orders: acc.orders + r.totalOrders
-    }), { returnLoss: 0, orders: 0 });
+      orders: acc.orders + r.totalOrders,
+      netProfit: acc.netProfit + r.netProfit
+    }), { returnLoss: 0, orders: 0, netProfit: 0 });
   }, [filteredRows]);
 
   return (
@@ -139,11 +141,12 @@ const DataSheet: React.FC = () => {
                 
                 <th className="p-3 bg-slate-800 text-white">TOTAL ORDER</th>
                 <th className="p-3 bg-red-50 text-red-800">PARCENT</th>
+                <th className="p-3 bg-green-50 text-green-800 border-l border-green-200">NET PROFIT</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-gray-100">
               {filteredRows.length === 0 ? (
-                <tr><td colSpan={21} className="p-8 text-center text-gray-400">No data found.</td></tr>
+                <tr><td colSpan={22} className="p-8 text-center text-gray-400">No data found.</td></tr>
               ) : filteredRows.map((row, idx) => (
                 <tr key={idx} className="hover:bg-gray-50">
                   <td className="p-3 text-left font-mono border-r sticky left-0 bg-white whitespace-nowrap">{row.date}</td>
@@ -173,6 +176,9 @@ const DataSheet: React.FC = () => {
                   <td className="p-3 text-red-500 font-bold">{Math.round(row.totalReturnTk).toLocaleString()}</td>
                   <td className="p-3 bg-slate-800 text-white font-bold text-center">{row.totalOrders}</td>
                   <td className="p-3 bg-red-50 text-red-800 text-center">{row.returnPercent}%</td>
+                  <td className={`p-3 font-bold border-l border-green-100 ${row.netProfit >= 0 ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
+                    {Math.round(row.netProfit).toLocaleString()}
+                  </td>
                 </tr>
               ))}
             </tbody>
@@ -183,6 +189,9 @@ const DataSheet: React.FC = () => {
                  <td className="p-3 bg-red-200 text-red-900">{Math.round(totals.returnLoss).toLocaleString()}</td>
                  <td className="p-3 bg-slate-900 text-white text-center">{totals.orders}</td>
                  <td className="p-3"></td>
+                 <td className={`p-3 border-l border-slate-300 ${totals.netProfit >= 0 ? 'bg-green-200 text-green-900' : 'bg-red-200 text-red-900'}`}>
+                    {Math.round(totals.netProfit).toLocaleString()}
+                 </td>
                </tr>
             </tfoot>
           </table>
