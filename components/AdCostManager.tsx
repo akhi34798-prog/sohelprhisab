@@ -1,5 +1,5 @@
 
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { getAnalysisByDate, saveAnalysisData, getPageNames, recalculateDailyFinancials } from '../services/storage';
 import { DailyAnalysisData, AnalysisRow } from '../types';
 import { v4 as uuidv4 } from 'uuid';
@@ -20,6 +20,8 @@ const AdCostManager: React.FC = () => {
   const [editDollar, setEditDollar] = useState<string>('');
   const [editRate, setEditRate] = useState<string>('');
   const [editSalary, setEditSalary] = useState<string>('');
+
+  const formRef = useRef<HTMLDivElement>(null);
 
   // All System Pages
   const [allSystemPages, setAllSystemPages] = useState<string[]>([]);
@@ -63,9 +65,10 @@ const AdCostManager: React.FC = () => {
     return Array.from(combined).sort();
   }, [dayData, allSystemPages]);
 
-  // Regex to allow only numbers and one decimal point
+  // Regex to allow only numbers and decimal point
   const validateNumberInput = (value: string) => {
-    if (value === '' || /^\d*\.?\d*$/.test(value)) {
+    // Allow empty, digits, dot, comma (replace comma with dot logic handled in change)
+    if (value === '' || /^\d*[.,]?\d*$/.test(value)) {
       return true;
     }
     return false;
@@ -134,6 +137,11 @@ const AdCostManager: React.FC = () => {
         setEditRate(String(currentRate));
         setEditSalary(String(totalSalary));
     }
+    
+    // Scroll form into view
+    if (formRef.current) {
+        formRef.current.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    }
   };
 
   const handleSavePageCost = () => {
@@ -196,7 +204,14 @@ const AdCostManager: React.FC = () => {
 
         updatedRows = currentDayData.rows.map(r => {
             if (r.pageName === selectedPage) {
-                const weight = totalOrders > 0 ? (r.totalOrders / totalOrders) : 0;
+                let weight = 0;
+                // FIX: If totalOrders is 0 (Cost Only row), distribute evenly (usually just 1 row)
+                if (totalOrders > 0) {
+                    weight = r.totalOrders / totalOrders;
+                } else {
+                    weight = 1 / pageRows.length;
+                }
+
                 return {
                     ...r,
                     pageTotalAdDollar: dDollar * weight,
@@ -238,7 +253,7 @@ const AdCostManager: React.FC = () => {
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-8">
         
         {/* Left Column: Forms */}
-        <div className="lg:col-span-4 space-y-6">
+        <div className="lg:col-span-4 space-y-6" ref={formRef}>
           
           {/* Edit Cost Entry Card (Yellow Theme) */}
           <div className={`bg-white rounded-xl shadow-sm border-2 overflow-hidden transition-all ${selectedPage ? 'border-orange-300 ring-2 ring-orange-100' : 'border-gray-100'}`}>
@@ -284,7 +299,7 @@ const AdCostManager: React.FC = () => {
                     type="text" 
                     inputMode="decimal"
                     value={editDollar} 
-                    onChange={e => validateNumberInput(e.target.value) && setEditDollar(e.target.value)} 
+                    onChange={e => validateNumberInput(e.target.value) && setEditDollar(e.target.value.replace(',', '.'))} 
                     className="w-full border rounded p-2.5 text-sm" 
                     placeholder="0"
                     disabled={!selectedPage} 
@@ -296,7 +311,7 @@ const AdCostManager: React.FC = () => {
                     type="text" 
                     inputMode="decimal"
                     value={editRate} 
-                    onChange={e => validateNumberInput(e.target.value) && setEditRate(e.target.value)} 
+                    onChange={e => validateNumberInput(e.target.value) && setEditRate(e.target.value.replace(',', '.'))} 
                     className="w-full border rounded p-2.5 text-sm" 
                     placeholder="0"
                     disabled={!selectedPage} 
@@ -320,7 +335,7 @@ const AdCostManager: React.FC = () => {
                         type="text" 
                         inputMode="decimal"
                         value={editSalary} 
-                        onChange={e => validateNumberInput(e.target.value) && setEditSalary(e.target.value)} 
+                        onChange={e => validateNumberInput(e.target.value) && setEditSalary(e.target.value.replace(',', '.'))} 
                         className="w-full border rounded p-2.5 pl-6 text-sm" 
                         placeholder="0"
                         disabled={!selectedPage} 
@@ -351,19 +366,19 @@ const AdCostManager: React.FC = () => {
                  <div className="grid grid-cols-2 gap-3">
                     <div>
                         <label className="text-[10px] uppercase font-bold text-gray-400">Mgmt Salary</label>
-                        <input type="text" inputMode="decimal" value={globalMgmt} onChange={e => validateNumberInput(e.target.value) && setGlobalMgmt(e.target.value)} className="w-full border rounded p-2 text-xs" placeholder="0"/>
+                        <input type="text" inputMode="decimal" value={globalMgmt} onChange={e => validateNumberInput(e.target.value) && setGlobalMgmt(e.target.value.replace(',', '.'))} className="w-full border rounded p-2 text-xs" placeholder="0"/>
                     </div>
                     <div>
                         <label className="text-[10px] uppercase font-bold text-gray-400">Office Cost</label>
-                        <input type="text" inputMode="decimal" value={globalOffice} onChange={e => validateNumberInput(e.target.value) && setGlobalOffice(e.target.value)} className="w-full border rounded p-2 text-xs" placeholder="0"/>
+                        <input type="text" inputMode="decimal" value={globalOffice} onChange={e => validateNumberInput(e.target.value) && setGlobalOffice(e.target.value.replace(',', '.'))} className="w-full border rounded p-2 text-xs" placeholder="0"/>
                     </div>
                     <div>
                         <label className="text-[10px] uppercase font-bold text-gray-400">Daily Bonus</label>
-                        <input type="text" inputMode="decimal" value={globalBonus} onChange={e => validateNumberInput(e.target.value) && setGlobalBonus(e.target.value)} className="w-full border rounded p-2 text-xs" placeholder="0"/>
+                        <input type="text" inputMode="decimal" value={globalBonus} onChange={e => validateNumberInput(e.target.value) && setGlobalBonus(e.target.value.replace(',', '.'))} className="w-full border rounded p-2 text-xs" placeholder="0"/>
                     </div>
                     <div>
                         <label className="text-[10px] uppercase font-bold text-gray-400">Global Rate</label>
-                        <input type="text" inputMode="decimal" value={globalRate} onChange={e => validateNumberInput(e.target.value) && setGlobalRate(e.target.value)} className="w-full border rounded p-2 text-xs" placeholder="126"/>
+                        <input type="text" inputMode="decimal" value={globalRate} onChange={e => validateNumberInput(e.target.value) && setGlobalRate(e.target.value.replace(',', '.'))} className="w-full border rounded p-2 text-xs" placeholder="126"/>
                     </div>
                  </div>
                  <button onClick={handleUpdateGlobals} className="w-full bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-bold py-2 rounded">

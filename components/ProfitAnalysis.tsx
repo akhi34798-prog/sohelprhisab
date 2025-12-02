@@ -42,18 +42,15 @@ const ProfitAnalysis: React.FC = () => {
 
   const updateRow = (id: string, field: keyof AnalysisRow, value: string) => {
     // Helper to allow typing decimals (e.g. "50.") without forcing Number() immediately
+    // This state is "dirty" (can contain strings) until Saved
     if (value === '' || /^\d*\.?\d*$/.test(value)) {
         setRows(rows.map(r => {
             if (r.id === id) {
-                return { ...r, [field]: value }; // Temporarily store as string for typing
+                return { ...r, [field]: value }; 
             }
             return r;
         }) as any); 
     }
-  };
-  
-  const onBlurRow = (id: string, field: keyof AnalysisRow, value: string) => {
-      setRows(rows.map(r => r.id === id ? { ...r, [field]: Number(value) || 0 } : r));
   };
 
   // --- PREPARE DATA FOR DISPLAY (PER UNIT LOGIC) ---
@@ -62,19 +59,18 @@ const ProfitAnalysis: React.FC = () => {
     const pageAggregates = new Map<string, number>();
     rows.forEach(r => {
       const current = pageAggregates.get(r.pageName) || 0;
+      // Convert to Number safely for aggregation
       pageAggregates.set(r.pageName, current + Number(r.pageTotalAdDollar));
     });
 
     return rows.map(r => {
+      // Safe Conversion for live calculation
       const tOrders = Number(r.totalOrders) || 0;
       const returnCount = Math.round((tOrders * Number(r.returnPercent)) / 100);
       const deliveredCount = tOrders - returnCount;
       const effectiveRate = Number(r.dollarRate) || dollarRate;
 
       // --- UNIT COSTS (For Display) ---
-      // Divisor is tOrders (All Orders) for Ops Costs, but deliveredCount for COGS logic in some contexts.
-      // Standard: Cost per Unit produced (tOrders)
-      
       const unitAdTk = tOrders > 0 ? (Number(r.pageTotalAdDollar) * effectiveRate) / tOrders : 0;
       const unitSalary = tOrders > 0 ? Number(r.pageTotalSalary) / tOrders : 0;
       
@@ -90,12 +86,8 @@ const ProfitAnalysis: React.FC = () => {
       // COD per delivered unit (nominal)
       const unitCod = (Number(r.salePrice) * Number(r.codChargePercent)) / 100;
       
-      // Return Loss (Displayed per delivered unit usually, but here we show per total unit for uniformity or Total Amount)
-      // Screenshot had "RETURN COST" around 49.85. 
-      // Let's stick to showing the Unit equivalent of the loss spread over delivered items? 
-      // Or just the raw cost per return? The column says "RETURN COST".
-      // Let's use the calculated return loss allocated per delivered unit.
-      const unitReturnLoss = (r.calculatedReturnLoss || 0) / (deliveredCount || 1); 
+      // Return Loss
+      const unitReturnLoss = deliveredCount > 0 ? (r.calculatedReturnLoss || 0) / deliveredCount : 0; 
 
       // Total Cost Per Unit (Delivered Basis)
       const unitTotalCost = Number(r.purchaseCost) + unitAdTk + unitSalary + unitMgmt + unitBonus + unitOffice + unitCod + unitReturnLoss + unitDelivery + unitPacking;
@@ -135,7 +127,7 @@ const ProfitAnalysis: React.FC = () => {
         const delivered = r.deliveredCount;
         
         return {
-          mallerDam: acc.mallerDam + (Number(r.purchaseCost) * tOrders), // Total Inventory Value
+          mallerDam: acc.mallerDam + (Number(r.purchaseCost) * tOrders),
           pageAdDollar: acc.pageAdDollar + Number(r.pageTotalAdDollar),
           adTk: acc.adTk + (Number(r.pageTotalAdDollar) * r.effectiveRate),
           pageSalary: acc.pageSalary + Number(r.pageTotalSalary),
@@ -147,7 +139,7 @@ const ProfitAnalysis: React.FC = () => {
           delivery: acc.delivery + (r.unitDelivery * tOrders),
           packing: acc.packing + (r.unitPacking * tOrders),
           
-          totalCost: acc.totalCost + (r.unitTotalCost * delivered), // Approx total cost of delivered goods
+          totalCost: acc.totalCost + (r.unitTotalCost * delivered),
           
           sales: acc.sales + (Number(r.salePrice) * delivered),
           netProfit: acc.netProfit + r.calculatedNet,
@@ -160,6 +152,7 @@ const ProfitAnalysis: React.FC = () => {
   }, [displayRows]);
 
   const handleSave = () => {
+    // Strictly convert all inputs to Numbers before saving
     const cleanRows = rows.map(r => ({
         ...r,
         purchaseCost: Number(r.purchaseCost),
@@ -248,7 +241,6 @@ const ProfitAnalysis: React.FC = () => {
                       inputMode="decimal"
                       value={row.purchaseCost}
                       onChange={e => updateRow(row.id, 'purchaseCost', e.target.value)}
-                      onBlur={e => onBlurRow(row.id, 'purchaseCost', e.target.value)}
                       className="w-full bg-transparent text-right outline-none focus:border-b border-blue-500"
                     />
                   </td>
@@ -274,7 +266,6 @@ const ProfitAnalysis: React.FC = () => {
                       inputMode="decimal"
                       value={row.salePrice}
                       onChange={e => updateRow(row.id, 'salePrice', e.target.value)}
-                      onBlur={e => onBlurRow(row.id, 'salePrice', e.target.value)}
                       className="w-full bg-transparent text-right outline-none focus:border-b border-blue-500 text-blue-700 font-bold"
                     />
                   </td>
@@ -292,7 +283,6 @@ const ProfitAnalysis: React.FC = () => {
                       inputMode="decimal"
                       value={row.totalOrders}
                       onChange={e => updateRow(row.id, 'totalOrders', e.target.value)}
-                      onBlur={e => onBlurRow(row.id, 'totalOrders', e.target.value)}
                       className="w-full bg-transparent text-center outline-none focus:border-b border-white text-white font-bold"
                     />
                   </td>
@@ -304,7 +294,6 @@ const ProfitAnalysis: React.FC = () => {
                       inputMode="decimal"
                       value={row.returnPercent}
                       onChange={e => updateRow(row.id, 'returnPercent', e.target.value)}
-                      onBlur={e => onBlurRow(row.id, 'returnPercent', e.target.value)}
                       className="w-full bg-transparent text-center outline-none focus:border-b border-red-500 text-red-800"
                     />
                   </td>
