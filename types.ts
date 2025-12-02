@@ -76,8 +76,11 @@ export interface AnalysisRow {
   salePrice: number;
   purchaseCost: number; // Maler dam
   
-  pageTotalAdDollar: number; // Total $ spend for this page
-  pageTotalSalary: number; // Total salary specific to this page
+  // Ad Costs
+  pageTotalAdDollar: number; // The dollar amount allocated to this row (product batch)
+  dollarRate: number; // Specific rate for this entry
+  
+  pageTotalSalary: number; // Salary allocated to this row
   
   deliveryCharge: number;
   packagingCost: number;
@@ -96,7 +99,7 @@ export interface DailyAnalysisData {
   date: string;
   
   // Global Daily Inputs
-  dollarRate: number;
+  dollarRate: number; // Fallback/Global
   totalMgmtSalary: number; // Office total salary
   totalOfficeCost: number; // Rent + Misc
   totalDailyBonus: number; // Office wide bonus

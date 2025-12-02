@@ -1,26 +1,20 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { v4 as uuidv4 } from 'uuid';
-import { Save, Plus, Trash2, Calculator } from 'lucide-react';
+import { Save, Trash2, Calculator } from 'lucide-react';
 import { saveAnalysisData, getAnalysisByDate } from '../services/storage';
 import { AnalysisRow, DailyAnalysisData } from '../types';
 
 const ProfitAnalysis: React.FC = () => {
   const [date, setDate] = useState(new Date().toISOString().split('T')[0]);
   
-  // Global Daily Inputs
+  // Global Daily Inputs (Defaults)
   const [dollarRate, setDollarRate] = useState(120);
   const [totalMgmtSalary, setTotalMgmtSalary] = useState(0);
   const [totalOfficeCost, setTotalOfficeCost] = useState(0);
   const [totalDailyBonus, setTotalDailyBonus] = useState(0);
 
   // Rows
-  const [rows, setRows] = useState<AnalysisRow[]>([
-    {
-      id: uuidv4(), pageName: 'Page 1', productName: 'Prod A', totalOrders: 0, returnPercent: 20, 
-      courierCancelPercent: 0, salePrice: 0, purchaseCost: 0, pageTotalAdDollar: 0, 
-      pageTotalSalary: 0, deliveryCharge: 120, packagingCost: 15, haziraBonus: 0, codChargePercent: 1
-    }
-  ]);
+  const [rows, setRows] = useState<AnalysisRow[]>([]);
 
   // Load data when date changes
   useEffect(() => {
@@ -33,24 +27,15 @@ const ProfitAnalysis: React.FC = () => {
       setRows(data.rows);
     } else {
       // Reset defaults if no data
-      setRows([{
-        id: uuidv4(), pageName: 'New Page', productName: '', totalOrders: 0, returnPercent: 20, 
-        courierCancelPercent: 0, salePrice: 0, purchaseCost: 0, pageTotalAdDollar: 0, 
-        pageTotalSalary: 0, deliveryCharge: 120, packagingCost: 15, haziraBonus: 0, codChargePercent: 1
-      }]);
+      setRows([]);
+      setTotalMgmtSalary(0);
+      setTotalOfficeCost(0);
+      setTotalDailyBonus(0);
     }
   }, [date]);
 
-  const addRow = () => {
-    setRows([...rows, {
-      id: uuidv4(), pageName: '', productName: '', totalOrders: 0, returnPercent: 20, 
-      courierCancelPercent: 0, salePrice: 0, purchaseCost: 0, pageTotalAdDollar: 0, 
-      pageTotalSalary: 0, deliveryCharge: 120, packagingCost: 15, haziraBonus: 0, codChargePercent: 1
-    }]);
-  };
-
   const removeRow = (id: string) => {
-    if (rows.length > 1) setRows(rows.filter(r => r.id !== id));
+    setRows(rows.filter(r => r.id !== id));
   };
 
   const updateRow = (id: string, field: keyof AnalysisRow, value: any) => {
@@ -74,28 +59,50 @@ const ProfitAnalysis: React.FC = () => {
       const returnCount = Math.round((r.totalOrders * r.returnPercent) / 100);
       const deliveredCount = r.totalOrders - returnCount;
       
-      // Per Unit Calculations
-      const unitAdCost = r.totalOrders > 0 ? (r.pageTotalAdDollar * dollarRate) / r.totalOrders : 0;
+      // Effective Rate: Use row specific rate if available, otherwise global default
+      const effectiveRate = r.dollarRate || dollarRate;
+
+      // --- COSTS CALCULATION ---
+      
+      // 1. Operational Costs per Unit (General Expenses on ALL items)
+      const unitAdCost = r.totalOrders > 0 ? (r.pageTotalAdDollar * effectiveRate) / r.totalOrders : 0;
       const unitPageSalary = r.totalOrders > 0 ? r.pageTotalSalary / r.totalOrders : 0;
+      
+      // Note: COD is NOT included here as it is only paid on delivery.
+      const unitOpCostNoCod = unitAdCost + unitPageSalary + avgMgmtSalary + avgBonus + avgOfficeCost + r.deliveryCharge + r.packagingCost;
+      
+      // Total Operations Cost (Spent on ALL orders, delivered or returned)
+      const totalOpsCost = unitOpCostNoCod * r.totalOrders;
+
+      // 2. COD Charge (Only on Delivered items)
       const unitCod = (r.salePrice * r.codChargePercent) / 100;
-      
-      // Total Operational Cost Per Unit (Excluding Maler Dam)
-      const unitOpCostNoReturn = unitAdCost + unitPageSalary + avgMgmtSalary + avgBonus + avgOfficeCost + unitCod + r.deliveryCharge + r.packagingCost;
-      const unitTotalCostExclReturn = r.purchaseCost + unitOpCostNoReturn;
+      const totalCod = unitCod * deliveredCount;
 
-      // Return Logic
-      const totalReturnLossTaka = unitOpCostNoReturn * returnCount;
+      // 3. Purchase Cost / COGS (Only on Delivered items - assumes returned items go back to inventory)
+      const totalPurchaseDelivered = r.purchaseCost * deliveredCount;
+
+      // 4. Revenue
+      const totalRevenue = r.salePrice * deliveredCount;
+
+      // --- PROFIT CALCULATION ---
+      // Net Profit = Revenue - (COGS Delivered) - (Total Ops Cost) - (Total COD)
+      const totalNetProfit = totalRevenue - totalPurchaseDelivered - totalOpsCost - totalCod;
+
+      // --- DERIVED METRICS FOR DISPLAY ---
+      
+      // "Per Pich Profit" is tricky because costs are spread. 
+      // We can approximate it by dividing Net Profit by Delivered Count (if any delivered)
+      const perPichProfit = deliveredCount > 0 ? totalNetProfit / deliveredCount : -unitOpCostNoCod;
+
+      // "Unit Return Charge" display - usually helps see how much a return "eats" from profit
+      // It's basically the operational cost wasted on a returned item
+      const totalReturnLossTaka = unitOpCostNoCod * returnCount;
       const unitReturnCharge = deliveredCount > 0 ? totalReturnLossTaka / deliveredCount : 0;
-
-      // Final Total Cost Per Unit (for a delivered item)
-      const finalUnitTotalCost = unitTotalCostExclReturn + unitReturnCharge;
-
-      // Profit
-      const perPichProfit = r.salePrice - finalUnitTotalCost;
       
-      // Net Profit
-      const totalNetProfit = perPichProfit * deliveredCount;
-      
+      // "Total Cost / Unit" (For visual reference of break-even on a delivered item)
+      // = Purchase + Ops + Amortized Return Ops + COD
+      const finalUnitTotalCost = r.purchaseCost + unitOpCostNoCod + unitReturnCharge + unitCod;
+
       // Asol Net Profit (Subtracting Manual Adjustments)
       const asolNetProfit = totalNetProfit - r.haziraBonus; 
 
@@ -115,7 +122,7 @@ const ProfitAnalysis: React.FC = () => {
         perPichProfit,
         totalNetProfit,
         asolNetProfit,
-        totalSales: r.salePrice * deliveredCount
+        totalSales: totalRevenue
       };
     });
   }, [rows, dollarRate, avgMgmtSalary, avgOfficeCost, avgBonus]);
@@ -157,7 +164,7 @@ const ProfitAnalysis: React.FC = () => {
       }
     };
     saveAnalysisData(data);
-    alert('Daily Analysis & Dashboard Data Saved!');
+    alert('Analysis Updated & Saved!');
   };
 
   return (
@@ -169,38 +176,14 @@ const ProfitAnalysis: React.FC = () => {
           </h2>
           <p className="text-sm text-gray-500">Daily breakdown of profit/loss per page</p>
         </div>
-        <div className="flex gap-2 bg-white p-2 rounded shadow">
+        <div className="flex gap-2 items-center bg-white p-2 rounded shadow">
            <input type="date" value={date} onChange={e => setDate(e.target.value)} className="border rounded p-1" />
+           <div className="bg-blue-50 px-3 py-1 rounded text-blue-800 font-bold text-sm">
+             Total Orders: {totalOfficeOrders}
+           </div>
            <button onClick={handleSave} className="bg-blue-600 text-white px-4 py-1 rounded hover:bg-blue-700 flex items-center gap-2">
-             <Save size={16} /> Save
+             <Save size={16} /> Update & Save
            </button>
-        </div>
-      </div>
-
-      {/* Global Inputs */}
-      <div className="grid grid-cols-2 md:grid-cols-5 gap-4 bg-white p-4 rounded-xl shadow-sm border border-gray-100 mb-6">
-        <div>
-          <label className="text-xs font-bold text-gray-500 uppercase">Dollar Rate</label>
-          <input type="number" value={dollarRate} onChange={e => setDollarRate(Number(e.target.value))} className="w-full border rounded p-1 mt-1 font-semibold" />
-        </div>
-        <div>
-          <label className="text-xs font-bold text-gray-500 uppercase">Total Mgmt Salary</label>
-          <input type="number" value={totalMgmtSalary} onChange={e => setTotalMgmtSalary(Number(e.target.value))} className="w-full border rounded p-1 mt-1" />
-          <span className="text-xs text-blue-600">Avg: {avgMgmtSalary.toFixed(1)}</span>
-        </div>
-        <div>
-          <label className="text-xs font-bold text-gray-500 uppercase">Total Office Cost</label>
-          <input type="number" value={totalOfficeCost} onChange={e => setTotalOfficeCost(Number(e.target.value))} className="w-full border rounded p-1 mt-1" />
-          <span className="text-xs text-blue-600">Avg: {avgOfficeCost.toFixed(1)}</span>
-        </div>
-        <div>
-          <label className="text-xs font-bold text-gray-500 uppercase">Total Bonus</label>
-          <input type="number" value={totalDailyBonus} onChange={e => setTotalDailyBonus(Number(e.target.value))} className="w-full border rounded p-1 mt-1" />
-          <span className="text-xs text-blue-600">Avg: {avgBonus.toFixed(1)}</span>
-        </div>
-        <div className="bg-gray-50 p-2 rounded border text-center">
-          <label className="text-xs font-bold text-gray-500 uppercase">Total Orders</label>
-          <p className="text-xl font-bold text-gray-800">{totalOfficeOrders}</p>
         </div>
       </div>
 
@@ -221,6 +204,7 @@ const ProfitAnalysis: React.FC = () => {
                 <th className="p-2 w-20 bg-gray-700">Sale Price</th>
                 <th className="p-2 w-20 bg-gray-700">Maler Dam</th>
                 <th className="p-2 w-20 bg-gray-700">Total Ad($)</th>
+                <th className="p-2 w-20 bg-gray-700">Rate</th>
                 <th className="p-2 w-20 bg-gray-700">Pg. Salary</th>
                 
                 {/* Costs per Unit */}
@@ -265,7 +249,10 @@ const ProfitAnalysis: React.FC = () => {
                   {/* Inputs */}
                   <td className="p-1"><input type="number" value={row.salePrice} onChange={e => updateRow(row.id, 'salePrice', e.target.value)} className="w-full border rounded px-1" /></td>
                   <td className="p-1"><input type="number" value={row.purchaseCost} onChange={e => updateRow(row.id, 'purchaseCost', e.target.value)} className="w-full border rounded px-1" /></td>
+                  
+                  {/* Costs */}
                   <td className="p-1"><input type="number" value={row.pageTotalAdDollar} onChange={e => updateRow(row.id, 'pageTotalAdDollar', e.target.value)} className="w-full border rounded px-1" /></td>
+                  <td className="p-1"><input type="number" value={row.dollarRate || dollarRate} onChange={e => updateRow(row.id, 'dollarRate', e.target.value)} className="w-full border rounded px-1 text-gray-500" title="Specific Rate" /></td>
                   <td className="p-1"><input type="number" value={row.pageTotalSalary} onChange={e => updateRow(row.id, 'pageTotalSalary', e.target.value)} className="w-full border rounded px-1" /></td>
 
                   {/* Calculated Costs */}
@@ -303,7 +290,7 @@ const ProfitAnalysis: React.FC = () => {
                  <td></td>
                  <td className="p-2 text-center text-red-600">{Math.round(calculatedRows.reduce((a,b)=>a+b.returnCount,0))}</td>
                  <td className="p-2 text-center text-green-700">{grandTotal.delivered}</td>
-                 <td colSpan={10} className="text-right pr-4 text-gray-500">Total Return Loss:</td>
+                 <td colSpan={11} className="text-right pr-4 text-gray-500">Total Return Loss:</td>
                  <td className="p-2 text-red-600">{grandTotal.returnLoss.toLocaleString()}</td>
                  <td colSpan={3} className="text-right pr-4 text-gray-500">Total Net Profit:</td>
                  <td className="p-2 text-xl text-blue-800">{grandTotal.netProfit.toLocaleString()}</td>
@@ -314,10 +301,9 @@ const ProfitAnalysis: React.FC = () => {
         </div>
       </div>
       
-      <div className="mt-4">
-        <button onClick={addRow} className="flex items-center gap-2 bg-slate-800 text-white px-4 py-2 rounded hover:bg-slate-700">
-          <Plus size={18} /> Add New Page Row
-        </button>
+      {/* Footer Info */}
+      <div className="mt-4 text-center text-gray-400 text-xs">
+        System Auto-Calculated. Use Order Entry to add new batches.
       </div>
     </div>
   );
