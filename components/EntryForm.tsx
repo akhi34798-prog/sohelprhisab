@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { v4 as uuidv4 } from 'uuid';
 import { AnalysisRow } from '../types';
 import { appendAnalysisRows, getPageNames, savePageName, deletePageName, getProductNames, saveProductName, deleteProductName, getAnalysisByDate } from '../services/storage';
-import { Plus, Trash2, Save, Settings, Info, Calendar } from 'lucide-react';
+import { Plus, Trash2, Save, Settings, Info, Calendar, RefreshCw } from 'lucide-react';
 
 // Sub-component for Managing Lists
 const ManageModal: React.FC<{
@@ -69,11 +69,16 @@ const EntryForm: React.FC = () => {
     { id: uuidv4(), name: '', qty: 0, sale: 0, buy: 0 }
   ]);
 
-  // Shared Costs
+  // Shared Costs (Representing TOTAL for the Day/Page)
   const [dollarAmount, setDollarAmount] = useState(0);
   const [rate, setRate] = useState(120);
   const [pageSalary, setPageSalary] = useState(0);
   const [returnPercent, setReturnPercent] = useState(20);
+
+  // Helper state to track what was loaded from storage
+  // This helps us calculate the "Delta" (New - Existing) when saving
+  const [loadedAdTotal, setLoadedAdTotal] = useState(0);
+  const [loadedSalTotal, setLoadedSalTotal] = useState(0);
 
   // Global Costs
   const [globalMgmt, setGlobalMgmt] = useState(0);
@@ -96,32 +101,64 @@ const EntryForm: React.FC = () => {
   }, [showPageModal, showProductModal]);
 
   useEffect(() => {
-    // Load existing globals for the day if avail
+    // 1. Load Global Costs for the day
     const dayData = getAnalysisByDate(date);
     if (dayData) {
       setGlobalMgmt(dayData.totalMgmtSalary);
       setGlobalOffice(dayData.totalOfficeCost);
       setGlobalBonus(dayData.totalDailyBonus);
       setGlobalLoaded(true);
-      
-      // Load recent entries
       setRecentEntries(dayData.rows);
     } else {
       setRecentEntries([]);
       setGlobalLoaded(false);
+      // Keep previous globals or reset? Resetting is safer for new day
+      setGlobalMgmt(0);
+      setGlobalOffice(0);
+      setGlobalBonus(0);
     }
-  }, [date]);
+
+    // 2. Load Page-Specific Costs (Total for Day)
+    if (pageName && dayData) {
+      const pageRows = dayData.rows.filter(r => r.pageName === pageName);
+      if (pageRows.length > 0) {
+        const totalAd = pageRows.reduce((sum, r) => sum + r.pageTotalAdDollar, 0);
+        const totalSal = pageRows.reduce((sum, r) => sum + r.pageTotalSalary, 0);
+        
+        // Use specific rate if set, else fallback to global for day, else 120
+        // Ensure we don't accidentally set 0 if rate is missing
+        const pageRate = pageRows[0].dollarRate || dayData.dollarRate || 120;
+
+        // Set inputs to match existing TOTAL
+        setDollarAmount(totalAd);
+        setPageSalary(totalSal);
+        setRate(pageRate);
+        
+        // Track what we loaded
+        setLoadedAdTotal(totalAd);
+        setLoadedSalTotal(totalSal);
+      } else {
+        // Page selected but no data yet -> Reset inputs
+        setDollarAmount(0);
+        setPageSalary(0);
+        setRate(dayData.dollarRate || 120); // Reset rate to daily default
+        setLoadedAdTotal(0);
+        setLoadedSalTotal(0);
+      }
+    } else {
+      // No page selected or no data for day -> Reset inputs
+      setDollarAmount(0);
+      setPageSalary(0);
+      setRate(dayData ? (dayData.dollarRate || 120) : 120);
+      setLoadedAdTotal(0);
+      setLoadedSalTotal(0);
+    }
+
+  }, [date, pageName]); 
 
   // --- Calculations ---
   const totalBatchOrders = useMemo(() => products.reduce((sum, p) => sum + p.qty, 0), [products]);
   const totalPageAdCost = dollarAmount * rate;
-
-  const calculatedCosts = useMemo(() => {
-    return {
-      adPerUnit: totalBatchOrders > 0 ? totalPageAdCost / totalBatchOrders : 0,
-      salaryPerUnit: totalBatchOrders > 0 ? pageSalary / totalBatchOrders : 0,
-    };
-  }, [totalBatchOrders, totalPageAdCost, pageSalary]);
 
   // --- Handlers ---
   const handleAddProduct = () => {
@@ -140,44 +177,57 @@ const EntryForm: React.FC = () => {
     if (!pageName) return alert("Please select a Page Name");
     if (totalBatchOrders === 0) return alert("Please enter at least one product with quantity");
 
-    // Estimate total orders for the day to calculate reasonable averages for global costs
-    // (Existing orders + new batch orders)
-    const existingTotalOrders = recentEntries.reduce((sum, r) => sum + r.totalOrders, 0);
+    // Fetch fresh data to ensure we calculate delta against latest state (in case of concurrent edits)
+    const currentDayData = getAnalysisByDate(date);
+    let existingAdTotal = 0;
+    let existingSalTotal = 0;
+    
+    if (currentDayData) {
+       const pageRows = currentDayData.rows.filter(r => r.pageName === pageName);
+       existingAdTotal = pageRows.reduce((sum, r) => sum + r.pageTotalAdDollar, 0);
+       existingSalTotal = pageRows.reduce((sum, r) => sum + r.pageTotalSalary, 0);
+    }
+
+    // CALCULATE DELTA: The amount to add to the system for this new batch
+    // If user kept input at 100 and existing is 100, delta is 0. 
+    // The system will then redistribute the 100 across (Old Orders + New Batch Orders).
+    const deltaAdDollar = dollarAmount - existingAdTotal;
+    const deltaPageSalary = pageSalary - existingSalTotal;
+
+    // Estimate total orders for global cost averaging
+    const existingTotalOrders = currentDayData ? currentDayData.rows.reduce((sum, r) => sum + r.totalOrders, 0) : 0;
     const estimatedDailyOrders = existingTotalOrders + totalBatchOrders;
 
     const avgMgmt = estimatedDailyOrders > 0 ? globalMgmt / estimatedDailyOrders : 0;
     const avgOffice = estimatedDailyOrders > 0 ? globalOffice / estimatedDailyOrders : 0;
     const avgBonus = estimatedDailyOrders > 0 ? globalBonus / estimatedDailyOrders : 0;
 
-    // Distribute costs and create rows
+    // Create New Rows
     const newRows: AnalysisRow[] = products.map(p => {
-      // Weight based on quantity
+      // Weight of this product within the CURRENT BATCH
       const weight = p.qty / totalBatchOrders;
       
-      // -- PRE-CALCULATION FOR IMMEDIATE DASHBOARD UPDATE --
+      // Assign the DELTA cost to this batch. 
+      // The `recalculateDailyFinancials` engine will later sum this up with old batches 
+      // and redistribute the GRAND TOTAL across ALL orders properly.
+      const assignedAdDollar = deltaAdDollar * weight;
+      const assignedSalary = deltaPageSalary * weight;
+
+      // -- PRE-CALCULATION (Temporary, mainly for immediate display logic before recalc logic runs) --
+      // Note: Actual final values will be set by appendAnalysisRows -> recalculateDailyFinancials
       const returnCount = Math.round((p.qty * returnPercent) / 100);
       const deliveredCount = p.qty - returnCount;
       
-      // Costs per Unit
-      const unitAd = (dollarAmount * weight * rate) / p.qty;
-      const unitSal = (pageSalary * weight) / p.qty;
-      // Note: We don't include COD here in general ops cost, because COD is only on delivered
+      // Temporary Unit Costs (Just for object creation)
+      const unitAd = (assignedAdDollar * rate) / p.qty; // This is just delta unit cost, doesn't matter, recalc fixes it
+      const unitSal = assignedSalary / p.qty;
       const unitOpsCost = unitAd + unitSal + avgMgmt + avgOffice + avgBonus + deliveryCharge + packingCost;
       
-      // Total Ops (On ALL items)
       const totalOpsCost = unitOpsCost * p.qty;
-      
-      // COD Charge (On DELIVERED items only)
       const unitCod = (p.sale * codPercent) / 100;
       const totalCod = unitCod * deliveredCount;
-
-      // Purchase Cost (On DELIVERED items only, as returned items act as inventory asset recovered)
       const totalPurchaseDelivered = p.buy * deliveredCount;
-      
-      // Revenue
       const totalRevenue = p.sale * deliveredCount;
-      
-      // Net Profit
       const netProfit = totalRevenue - totalPurchaseDelivered - totalOpsCost - totalCod;
 
       return {
@@ -190,17 +240,16 @@ const EntryForm: React.FC = () => {
         salePrice: p.sale,
         purchaseCost: p.buy,
         
-        // Distributed costs
-        pageTotalAdDollar: dollarAmount * weight,
+        // Save DELTA costs here. Storage service will merge and redistribute.
+        pageTotalAdDollar: assignedAdDollar, 
         dollarRate: rate,
-        pageTotalSalary: pageSalary * weight,
+        pageTotalSalary: assignedSalary,
         
         deliveryCharge,
         packagingCost: packingCost,
         haziraBonus: 0,
         codChargePercent: codPercent,
         
-        // Save Calculated Fields
         calculatedNetProfit: netProfit,
         calculatedReturnLoss: unitOpsCost * returnCount,
         calculatedTotalSales: totalRevenue
@@ -208,7 +257,7 @@ const EntryForm: React.FC = () => {
     });
 
     appendAnalysisRows(date, newRows, {
-      dollarRate: rate, // Update global rate preference
+      dollarRate: rate,
       totalMgmtSalary: globalMgmt,
       totalOfficeCost: globalOffice,
       totalDailyBonus: globalBonus
@@ -216,12 +265,14 @@ const EntryForm: React.FC = () => {
 
     alert("Batch Added Successfully!");
     
-    // Reset Batch Fields
+    // Reset Batch Product Fields Only
     setProducts([{ id: uuidv4(), name: '', qty: 0, sale: 0, buy: 0 }]);
-    setDollarAmount(0);
-    setPageSalary(0);
-    // Keep globals, date, page, and logistics as they might be similar
     
+    // We do NOT reset dollarAmount or pageSalary here, because they represent the "Total for Page".
+    // We update our 'loaded' tracker to match the new total so subsequent adds calculate delta correctly.
+    setLoadedAdTotal(dollarAmount);
+    setLoadedSalTotal(pageSalary);
+
     // Refresh Sidebar
     const updated = getAnalysisByDate(date);
     if (updated) setRecentEntries(updated.rows);
@@ -310,13 +361,30 @@ const EntryForm: React.FC = () => {
 
         {/* Shared Costs */}
         <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
-           <h3 className="text-gray-500 text-sm font-bold uppercase mb-4">Page Shared Costs (Total)</h3>
-           <p className="text-xs text-gray-400 mb-4 -mt-3">Costs divided by Batch Total ({totalBatchOrders})</p>
+           <div className="flex justify-between items-center mb-4">
+              <div>
+                <h3 className="text-gray-500 text-sm font-bold uppercase">Page Shared Costs (Total)</h3>
+                <p className="text-xs text-blue-500">
+                  {pageName ? `Viewing Daily Total for: ${pageName}` : 'Select a page to load totals'}
+                </p>
+              </div>
+              {pageName && (
+                <div className="text-xs text-gray-400 flex items-center gap-1">
+                  <RefreshCw size={12}/> Auto-loads existing values
+                </div>
+              )}
+           </div>
            
            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
               <div>
-                <label className="text-xs font-semibold text-gray-600">Dollar Amount ($)</label>
-                <input type="number" value={dollarAmount} onChange={e => setDollarAmount(Number(e.target.value))} className="w-full border rounded p-2 mt-1" />
+                <label className="text-xs font-semibold text-gray-600">Total Dollar Amount ($)</label>
+                <input 
+                  type="number" 
+                  value={dollarAmount} 
+                  onChange={e => setDollarAmount(Number(e.target.value))} 
+                  className="w-full border rounded p-2 mt-1 focus:ring-2 focus:ring-blue-100 outline-none" 
+                  placeholder="0"
+                />
               </div>
               <div>
                 <label className="text-xs font-semibold text-gray-600">Rate (Tk)</label>
@@ -343,7 +411,7 @@ const EntryForm: React.FC = () => {
         {/* Global Costs */}
         <div className="bg-yellow-50 p-6 rounded-xl border border-yellow-200">
            <div className="flex justify-between items-center mb-4">
-             <h3 className="text-yellow-800 text-sm font-bold uppercase">Office Global Costs (Daily)</h3>
+             <h3 className="text-yellow-800 text-sm font-bold uppercase">Office Global Costs (Daily - Applies to All Pages)</h3>
              {globalLoaded && <span className="text-xs bg-yellow-200 text-yellow-800 px-2 py-1 rounded flex items-center gap-1"><Info size={12}/> Auto-loaded from date</span>}
            </div>
            

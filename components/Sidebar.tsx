@@ -12,9 +12,9 @@ interface SidebarProps {
 const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, currentUser, onLogout }) => {
   const menuItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: [UserRole.ADMIN, UserRole.VIEWER, UserRole.ENTRY_OPERATOR] },
-    { id: 'analysis', label: 'Profit Analysis', icon: Calculator, roles: [UserRole.ADMIN, UserRole.ENTRY_OPERATOR] },
     { id: 'entry', label: 'Order Entry (Single)', icon: FileInput, roles: [UserRole.ADMIN, UserRole.ENTRY_OPERATOR] },
     { id: 'data', label: 'Data Sheet (Orders)', icon: Table, roles: [UserRole.ADMIN, UserRole.VIEWER, UserRole.ENTRY_OPERATOR] },
+    { id: 'analysis', label: 'Profit Analysis', icon: Calculator, roles: [UserRole.ADMIN, UserRole.ENTRY_OPERATOR] },
     { id: 'admanager', label: 'Ad Cost Manager', icon: TrendingUp, roles: [UserRole.ADMIN, UserRole.ENTRY_OPERATOR] },
     { id: 'reports', label: 'Summary Report', icon: PieChart, roles: [UserRole.ADMIN, UserRole.VIEWER] },
     { id: 'admin', label: 'Admin Panel', icon: Users, roles: [UserRole.ADMIN] },

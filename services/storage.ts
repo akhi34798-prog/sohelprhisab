@@ -92,53 +92,104 @@ export const getAnalysisByDate = (date: string): DailyAnalysisData | null => {
 
 // --- CENTRAL CALCULATION ENGINE ---
 export const recalculateDailyFinancials = (dayData: DailyAnalysisData): DailyAnalysisData => {
-    const totalDailyOrders = dayData.rows.reduce((sum, r) => sum + r.totalOrders, 0);
+    // 1. GLOBAL DISTRIBUTION (Mgmt, Office, Bonus)
+    // Distributed based on TOTAL DAILY ORDERS (Sum of all pages)
+    // CRITICAL FIX: Cast to Number() to avoid string concatenation "180" + "100" = "180100"
+    const totalDailyOrders = dayData.rows.reduce((sum, r) => sum + Number(r.totalOrders), 0);
     
-    // Global Averages (Total Daily Cost / Total Daily Orders)
-    // This ensures that as orders increase, the per-unit cost of management decreases
-    const avgMgmt = totalDailyOrders > 0 ? dayData.totalMgmtSalary / totalDailyOrders : 0;
-    const avgOffice = totalDailyOrders > 0 ? dayData.totalOfficeCost / totalDailyOrders : 0;
-    const avgBonus = totalDailyOrders > 0 ? dayData.totalDailyBonus / totalDailyOrders : 0;
+    // Global Unit Costs
+    const unitMgmt = totalDailyOrders > 0 ? Number(dayData.totalMgmtSalary) / totalDailyOrders : 0;
+    const unitOffice = totalDailyOrders > 0 ? Number(dayData.totalOfficeCost) / totalDailyOrders : 0;
+    const unitBonus = totalDailyOrders > 0 ? Number(dayData.totalDailyBonus) / totalDailyOrders : 0;
 
+    // 2. PAGE LEVEL DISTRIBUTION (Ad, Page Salary)
+    // Distributed based on TOTAL PAGE ORDERS (Sum of orders for that specific page)
+    const pageAggregates = new Map<string, { totalOrders: number; totalAdDollar: number; totalSalary: number }>();
+
+    // First pass: Aggregate totals per page
+    dayData.rows.forEach(r => {
+        if (!pageAggregates.has(r.pageName)) {
+            pageAggregates.set(r.pageName, { totalOrders: 0, totalAdDollar: 0, totalSalary: 0 });
+        }
+        const agg = pageAggregates.get(r.pageName)!;
+        agg.totalOrders += Number(r.totalOrders);
+        agg.totalAdDollar += Number(r.pageTotalAdDollar); // This is the 'delta' amount added during entry or direct edit
+        agg.totalSalary += Number(r.pageTotalSalary);
+    });
+
+    // 3. ROW CALCULATION
     const updatedRows = dayData.rows.map(row => {
-        const returnCount = Math.round((row.totalOrders * row.returnPercent) / 100);
-        const deliveredCount = row.totalOrders - returnCount;
-        const effectiveRate = row.dollarRate || dayData.dollarRate;
-
-        // 1. Operational Costs (On ALL items)
-        // Ad & Page Salary are stored as 'pageTotalAdDollar' and 'pageTotalSalary' for this specific batch.
-        // We convert Ad Dollar to Tk using the rate.
-        const totalAdTk = row.pageTotalAdDollar * effectiveRate;
+        const tOrders = Number(row.totalOrders);
+        const returnCount = Math.round((tOrders * Number(row.returnPercent)) / 100);
+        const deliveredCount = tOrders - returnCount;
         
-        // Total Ops for this batch = Ad + Salary + (Global Shares * Qty) + Logistics
-        const totalOps = totalAdTk + row.pageTotalSalary + 
-                         (avgMgmt * row.totalOrders) + 
-                         (avgOffice * row.totalOrders) + 
-                         (avgBonus * row.totalOrders) + 
-                         (row.deliveryCharge * row.totalOrders) + 
-                         (row.packagingCost * row.totalOrders);
+        // --- Distribute Page Costs ---
+        const agg = pageAggregates.get(row.pageName)!;
+        
+        let distributedAdDollar = 0;
+        let distributedSalary = 0;
 
-        // 2. COD (Delivered Only)
-        const unitCod = (row.salePrice * row.codChargePercent) / 100;
+        // Formula: (Total Page Cost / Total Page Orders) * Row Orders
+        // This ensures uniform cost per unit for all batches in the page
+        if (agg && agg.totalOrders > 0) {
+           const weight = tOrders / agg.totalOrders;
+           distributedAdDollar = agg.totalAdDollar * weight;
+           distributedSalary = agg.totalSalary * weight;
+        } else {
+           // Fallback for Cost-Only rows (0 orders)
+           distributedAdDollar = Number(row.pageTotalAdDollar);
+           distributedSalary = Number(row.pageTotalSalary);
+        }
+
+        const effectiveRate = Number(row.dollarRate) || Number(dayData.dollarRate);
+        const totalAdTk = distributedAdDollar * effectiveRate; 
+
+        // --- Distribute Global Costs ---
+        const totalMgmt = unitMgmt * tOrders;
+        const totalOffice = unitOffice * tOrders;
+        const totalBonus = unitBonus * tOrders;
+        
+        // --- Other Direct Costs ---
+        const totalDelivery = Number(row.deliveryCharge) * tOrders;
+        const totalPacking = Number(row.packagingCost) * tOrders;
+
+        // --- Operational Cost Per Unit (For Return Loss) ---
+        // Ops Cost = Ad + Sal + Mgmt + Office + Bonus + Del + Pack
+        const totalOpsForBatch = totalAdTk + distributedSalary + totalMgmt + totalOffice + totalBonus + totalDelivery + totalPacking;
+        const unitOpsCost = tOrders > 0 ? totalOpsForBatch / tOrders : 0;
+
+        // --- Return Loss (Total Return Tk) ---
+        // Cost wasted on returned items
+        const totalReturnLoss = unitOpsCost * returnCount;
+
+        // --- COD ---
+        const unitCod = (Number(row.salePrice) * Number(row.codChargePercent)) / 100;
         const totalCod = unitCod * deliveredCount;
 
-        // 3. Purchase (Delivered Only)
-        const totalPurchase = row.purchaseCost * deliveredCount;
-
-        // 4. Revenue
-        const totalRevenue = row.salePrice * deliveredCount;
-
-        // 5. Net Profit
-        const netProfit = totalRevenue - totalPurchase - totalOps - totalCod - row.haziraBonus;
+        // --- COGS (Maler Dam) ---
+        // Delivered COGS (Expense)
+        const cogsExpense = Number(row.purchaseCost) * deliveredCount; 
         
-        // Return Loss (Ops wasted on returns)
-        const unitOps = row.totalOrders > 0 ? totalOps / row.totalOrders : 0;
-        const returnLoss = unitOps * returnCount;
+        // --- TOTAL COST (For Calculation) ---
+        // This matches the sum of all expense columns:
+        // Cogs(Delivered) + Ad + PageSal + Mgmt + Office + Bonus + Del + Pack + COD + ReturnLoss
+        // We include ReturnLoss here because "Total Cost" usually implies "Total Deductions from Sales"
+        // Net Profit = Sales - Total Cost
+        const totalCost = cogsExpense + totalOpsForBatch + totalCod + (Number(row.haziraBonus) || 0);
+
+        // --- Revenue ---
+        const totalRevenue = Number(row.salePrice) * deliveredCount;
+
+        // --- Net Profit ---
+        const netProfit = totalRevenue - totalCost;
 
         return {
             ...row,
+            totalOrders: tOrders, // ensure number stored
+            pageTotalAdDollar: distributedAdDollar,
+            pageTotalSalary: distributedSalary,
             calculatedNetProfit: netProfit,
-            calculatedReturnLoss: returnLoss,
+            calculatedReturnLoss: totalReturnLoss,
             calculatedTotalSales: totalRevenue
         };
     });
@@ -163,27 +214,22 @@ export const appendAnalysisRows = (date: string, newRows: AnalysisRow[], globalU
       dayData = {
           id: uuidv4(),
           date: date,
-          dollarRate: globalUpdates.dollarRate || 120,
-          totalMgmtSalary: globalUpdates.totalMgmtSalary || 0,
-          totalOfficeCost: globalUpdates.totalOfficeCost || 0,
-          totalDailyBonus: globalUpdates.totalDailyBonus || 0,
+          dollarRate: Number(globalUpdates.dollarRate) || 120,
+          totalMgmtSalary: Number(globalUpdates.totalMgmtSalary) || 0,
+          totalOfficeCost: Number(globalUpdates.totalOfficeCost) || 0,
+          totalDailyBonus: Number(globalUpdates.totalDailyBonus) || 0,
           rows: []
       };
   } else {
-      // Update globals if provided values are non-zero or explicitly intended (we assume entry form values override)
-      if (globalUpdates.dollarRate) dayData.dollarRate = globalUpdates.dollarRate;
-      if (globalUpdates.totalMgmtSalary !== undefined) dayData.totalMgmtSalary = globalUpdates.totalMgmtSalary;
-      if (globalUpdates.totalOfficeCost !== undefined) dayData.totalOfficeCost = globalUpdates.totalOfficeCost;
-      if (globalUpdates.totalDailyBonus !== undefined) dayData.totalDailyBonus = globalUpdates.totalDailyBonus;
+      if (globalUpdates.dollarRate) dayData.dollarRate = Number(globalUpdates.dollarRate);
+      if (globalUpdates.totalMgmtSalary !== undefined) dayData.totalMgmtSalary = Number(globalUpdates.totalMgmtSalary);
+      if (globalUpdates.totalOfficeCost !== undefined) dayData.totalOfficeCost = Number(globalUpdates.totalOfficeCost);
+      if (globalUpdates.totalDailyBonus !== undefined) dayData.totalDailyBonus = Number(globalUpdates.totalDailyBonus);
   }
 
-  // Merge new rows
   dayData.rows = [...dayData.rows, ...newRows];
-  
-  // Recalculate everything to distribute globals correctly across OLD and NEW rows
   const calculatedDay = recalculateDailyFinancials(dayData);
   
-  // Re-save entire structure
   const otherDays = allData.filter(d => d.date !== date);
   otherDays.push(calculatedDay);
   localStorage.setItem(KEYS.ANALYSIS, JSON.stringify(otherDays));

@@ -89,9 +89,9 @@ const App: React.FC = () => {
       
       <main className="ml-64 flex-1">
         {activeTab === 'dashboard' && <Dashboard />}
-        {activeTab === 'analysis' && <ProfitAnalysis />}
         {activeTab === 'entry' && <EntryForm />}
         {activeTab === 'data' && <DataSheet />}
+        {activeTab === 'analysis' && <ProfitAnalysis />}
         {activeTab === 'admanager' && <AdCostManager />}
         {activeTab === 'reports' && <SummaryReport />}
         {activeTab === 'admin' && <AdminPanel />}
